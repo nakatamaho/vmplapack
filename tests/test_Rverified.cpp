@@ -186,6 +186,103 @@ void test_verified_regular_cases(const char* tier, const int* exponents, std::si
 }
 
 template <class REAL>
+REAL directed_sum_midpoint(const std::vector<REAL>& x) {
+    using A = vmplapack::Rarith<REAL>;
+
+    REAL sup = A::zero();
+    {
+        typename A::round_up scope;
+        REAL acc = A::zero();
+        for (std::size_t i = 0; i < x.size(); ++i) {
+            REAL next = acc + x[i];
+            acc = next;
+        }
+        sup = acc;
+    }
+
+    REAL inf = A::zero();
+    {
+        typename A::round_down scope;
+        REAL acc = A::zero();
+        for (std::size_t i = 0; i < x.size(); ++i) {
+            REAL next = acc + x[i];
+            acc = next;
+        }
+        inf = acc;
+    }
+
+    REAL mid = vmplapack::Rmidpoint(inf, sup);
+    return mid;
+}
+
+template <class REAL>
+REAL directed_dot_midpoint(const vmplapack::gendot::Rdot_case<REAL>& c) {
+    using A = vmplapack::Rarith<REAL>;
+
+    REAL sup = A::zero();
+    {
+        typename A::round_up scope;
+        REAL acc = A::zero();
+        for (std::size_t i = 0; i < c.x.size(); ++i) {
+            REAL prod = c.x[i] * c.y[i];
+            REAL next = acc + prod;
+            acc = next;
+        }
+        sup = acc;
+    }
+
+    REAL inf = A::zero();
+    {
+        typename A::round_down scope;
+        REAL acc = A::zero();
+        for (std::size_t i = 0; i < c.x.size(); ++i) {
+            REAL prod = c.x[i] * c.y[i];
+            REAL next = acc + prod;
+            acc = next;
+        }
+        inf = acc;
+    }
+
+    REAL mid = vmplapack::Rmidpoint(inf, sup);
+    return mid;
+}
+
+template <class REAL>
+void test_m6_accurate_midpoints(const char* tier, int exponent) {
+    using A = vmplapack::Rarith<REAL>;
+
+    // Catches an M5-style vRsum midpoint that still uses Rmidpoint(inf, sup) instead of Rsum.
+    std::vector<REAL> sum_case = exponent_sum_case<REAL>(exponent);
+    vmplapack::Rmidrad<REAL> sum_box =
+        vmplapack::vRsum(static_cast<std::ptrdiff_t>(sum_case.size()), sum_case.data(), 1);
+    REAL accurate_sum = vmplapack::Rsum(static_cast<std::ptrdiff_t>(sum_case.size()), sum_case.data(), 1);
+    REAL old_sum_mid = directed_sum_midpoint(sum_case);
+    require<REAL>(sum_box.status == vmplapack::Rstatus::ok, tier, "M6 vRsum midpoint case returned non-ok");
+    require<REAL>(accurate_sum == A::one(), tier, "Rsum did not recover the Family C sum value");
+    require<REAL>(old_sum_mid != accurate_sum, tier, "M6 vRsum test case does not separate old and new midpoints");
+    require<REAL>(sum_box.mid == accurate_sum, tier, "vRsum midpoint did not use Rsum");
+
+    // Catches an M5-style vRdot midpoint that still uses Rmidpoint(inf, sup) instead of Rdot.
+    vmplapack::gendot::Rdot_case<REAL> dot_case =
+        vmplapack::gendot::family_c_exponent_cancellation<REAL>(exponent, A::one());
+    vmplapack::Rmidrad<REAL> dot_box = vmplapack::vRdot(static_cast<std::ptrdiff_t>(dot_case.x.size()),
+                                                       dot_case.x.data(),
+                                                       1,
+                                                       dot_case.y.data(),
+                                                       1);
+    REAL accurate_dot = vmplapack::Rdot(static_cast<std::ptrdiff_t>(dot_case.x.size()),
+                                        dot_case.x.data(),
+                                        1,
+                                        dot_case.y.data(),
+                                        1);
+    REAL old_dot_mid = directed_dot_midpoint(dot_case);
+    require<REAL>(dot_box.status == vmplapack::Rstatus::ok, tier, "M6 vRdot midpoint case returned non-ok");
+    require<REAL>(accurate_dot == dot_case.exact, tier, "Rdot did not recover the Family C dot value");
+    require<REAL>(old_dot_mid != accurate_dot, tier, "M6 vRdot test case does not separate old and new midpoints");
+    require<REAL>(dot_box.mid == accurate_dot, tier, "vRdot midpoint did not use Rdot");
+}
+
+template <class REAL>
 void test_verified_strides(const char* tier) {
     using A = vmplapack::Rarith<REAL>;
 
@@ -397,6 +494,7 @@ void test_residual_regular_and_boundaries(const char* tier) {
 template <class REAL>
 void test_tier(const char* tier, const int* exponents, std::size_t exponent_count) {
     test_verified_regular_cases<REAL>(tier, exponents, exponent_count);
+    test_m6_accurate_midpoints<REAL>(tier, exponents[exponent_count - 1]);
     test_verified_strides<REAL>(tier);
     test_verified_boundaries_and_statuses<REAL>(tier);
     test_residual_regular_and_boundaries<REAL>(tier);

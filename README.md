@@ -1,0 +1,153 @@
+<!--
+Copyright (c) 2026, NAKATA Maho
+SPDX-License-Identifier: BSD-2-Clause
+-->
+
+# vMPLAPACK
+
+vMPLAPACK is a standalone C++17 prototype of accurate and verified `sum` and `dot` kernels in the MPLAPACK style. It is not part of MPLAPACK and does not depend on the MPLAPACK source tree.
+
+The public routines are templated on `REAL` and share one generic implementation across three co-equal scalar tiers:
+
+```text
+REAL = float
+REAL = double
+REAL = mpfrxx::mpfr_class
+```
+
+Tier-specific behavior is isolated in `vmplapack::Rarith<REAL>`. The MPFR tier uses gmpfrxx_mkII at a fixed working precision `W`; it is a first-class scalar tier, and high-precision MPFR is also used by the test oracle.
+
+## Accurate vs Verified
+
+Accurate routines return a bare `REAL` approximation:
+
+```cpp
+Rsum(n, x, incx)
+Rdot(n, x, incx, y, incy)
+```
+
+They use compensated Sum2/Dot2-style algorithms. They are better approximations, but they do not carry a certificate.
+
+Verified routines return a midpoint-radius enclosure plus a status:
+
+```cpp
+vRsum(n, x, incx)
+vRdot(n, x, incx, y, incy)
+vRresidual(m, n, A, lda, x, b, out)
+```
+
+For `status == ok`, the true finite result is guaranteed to be in:
+
+```text
+[mid - rad, mid + rad]
+```
+
+For `status == unbounded`, the certificate is still valid but useless: `rad == +inf`, representing `[-inf,+inf]`. This is used when finite inputs overflow during bound construction. For `status == non_finite`, an input was NaN or Inf, so no finite-real certificate is claimed. For `status == invalid_input`, the arguments violate the verified API boundary rules.
+
+Verification means interval inclusion, not closeness to an MPFR point. Tests compare verified intervals against an MPFR oracle interval `[ref_lo, ref_hi]`.
+
+## Boundary Rules
+
+Accurate routines follow the bare BLAS-style contract:
+
+```text
+n <= 0       -> return zero and inspect no pointer
+n > 0        -> pointers valid and strides >= 1 are preconditions
+```
+
+Verified routines classify invalid inputs explicitly:
+
+```text
+vRsum/vRdot:
+  n < 0       -> invalid_input
+  n == 0      -> {0, 0, ok}
+  null pointer or non-positive stride with n > 0 -> invalid_input
+
+vRresidual:
+  m < 0 or n < 0 -> invalid_input
+  m == 0         -> ok, write nothing
+  m > 0, n == 0  -> out[i] = {b[i], 0, ok} for finite b[i]
+  m > 0, n > 0   -> A, x, b, out valid and lda >= n required
+```
+
+`vRresidual` computes `r = b - A*x` row by row and returns the worst `Rstatus` by `Rstatus_rank`.
+
+## Floating-Point Contract
+
+The verified algorithms depend on runtime directed rounding. Native builds must preserve IEEE-754 semantics and must not contract or reassociate floating-point expressions. Consumers should link the CMake target rather than only adding include paths:
+
+```cmake
+target_link_libraries(your_target PRIVATE vmplapack::vmplapack)
+```
+
+The target propagates the required flags on supported compilers, including:
+
+```text
+-fno-fast-math
+-frounding-math
+-ffp-contract=off
+```
+
+The umbrella header rejects fast-math builds with `__FAST_MATH__`, and it requires `FLT_EVAL_METHOD == 0`. Runtime tests also check that rounding scopes restore the prior mode, subnormals are alive, and directed rounding affects ordinary addition and multiplication.
+
+Accurate/EFT kernels require ambient round-to-nearest. Do not call them from inside a directed-rounding scope. Verified passes use plain product then add, not FMA contraction.
+
+## MPFR Fixed Precision
+
+When `VMPLAPACK_ENABLE_MPFR=ON`, `mpfrxx::mpfr_class` is enabled as a first-class tier. The working precision `W` is fixed for a test process or run. Set it before constructing any MPFR inputs:
+
+```cpp
+mpfrxx::set_default_precision_bits(512);
+```
+
+Existing `mpfr_class` objects keep their original precision, so do not mix objects created before and after changing `W`. Tests run MPFR at `W=53` and `W=512` as separate CTest cases.
+
+## Build and Test
+
+Full build with MPFR:
+
+```bash
+cmake -S . -B build -DVMPLAPACK_ENABLE_MPFR=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+Native-only build, with no GMP/MPFR requirement:
+
+```bash
+cmake -S . -B build-native -DVMPLAPACK_ENABLE_MPFR=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build-native -j
+ctest --test-dir build-native --output-on-failure
+```
+
+Optional Dekker TwoProduct path:
+
+```bash
+cmake -S . -B build-dekker -DVMPLAPACK_USE_DEKKER_TWOPRODUCT=ON
+```
+
+If gmpfrxx_mkII is not in the default probe location, pass:
+
+```bash
+-DGMPFRXX_MKII_INCLUDE_DIR=/path/to/gmpfrxx_mkII/include
+```
+
+## Examples
+
+Examples are built when `VMPLAPACK_ENABLE_EXAMPLES=ON`. Tier-complete examples exercise `float`, `double`, and `mpfrxx::mpfr_class` at `W=512`.
+
+Useful examples include:
+
+```text
+example_vRdot
+example_vRresidual
+example_m4_accurate_dot
+example_m4_accurate_sum
+example_m3_oracle_generators
+```
+
+## References
+
+- T. Ogita, S. M. Rump, S. Oishi, "Accurate Sum and Dot Product", SIAM J. Sci. Comput. 26(6), 1955-1988, 2005. DOI: 10.1137/030601818.
+- S. M. Rump, "Verification methods: Rigorous results using floating-point arithmetic", Acta Numerica 19, 287-449, 2010. DOI: 10.1017/S096249291000005X.
+- N. J. Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., SIAM, 2002. ISBN: 0-89871-521-0 / 978-0-89871-521-7. DOI: 10.1137/1.9780898718027.

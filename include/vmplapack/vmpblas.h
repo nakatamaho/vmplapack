@@ -166,7 +166,7 @@ Rmidrad<REAL> vRsum(std::ptrdiff_t n, const REAL* x, std::ptrdiff_t incx) {
         inf = acc;
     }
 
-    REAL mid = Rmidpoint(inf, sup);
+    REAL mid = Rsum(n, x, incx);
     return Rmake_midrad(inf, sup, mid);
 }
 
@@ -218,7 +218,7 @@ Rmidrad<REAL> vRdot(std::ptrdiff_t n,
         inf = acc;
     }
 
-    REAL mid = Rmidpoint(inf, sup);
+    REAL mid = Rdot(n, x, incx, y, incy);
     return Rmake_midrad(inf, sup, mid);
 }
 
