@@ -16,18 +16,44 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(RoundingControl)
 include(CheckCXXSourceCompiles)
 
-add_library(vmplapack INTERFACE)
+add_library(vmplapack
+    src/Rdot.cpp
+    src/Rsum.cpp
+    src/vRdot.cpp
+    src/vRresidual.cpp
+    src/vRsum.cpp)
 add_library(vmplapack::vmplapack ALIAS vmplapack)
 
-target_compile_features(vmplapack INTERFACE cxx_std_17)
+target_compile_features(vmplapack PUBLIC cxx_std_17)
 target_include_directories(vmplapack
-    INTERFACE
+    PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>)
-target_link_libraries(vmplapack INTERFACE vmplapack::rounding_control)
+target_link_libraries(vmplapack PUBLIC vmplapack::rounding_control)
 
 if(VMPLAPACK_ENABLE_MPFR)
     set(GMPFRXX_MKII_INCLUDE_DIR "" CACHE PATH "Path to the gmpfrxx_mkII include directory")
+    function(vmplapack_clear_missing_header cache_variable header_name)
+        if(DEFINED ${cache_variable})
+            if(NOT "${${cache_variable}}" STREQUAL "" AND NOT EXISTS "${${cache_variable}}/${header_name}")
+                unset(${cache_variable} CACHE)
+            endif()
+        endif()
+    endfunction()
+
+    function(vmplapack_clear_missing_library cache_variable)
+        if(DEFINED ${cache_variable})
+            if(NOT "${${cache_variable}}" STREQUAL "" AND NOT EXISTS "${${cache_variable}}")
+                unset(${cache_variable} CACHE)
+            endif()
+        endif()
+    endfunction()
+
+    if(GMPFRXX_MKII_INCLUDE_DIR
+            AND NOT EXISTS "${GMPFRXX_MKII_INCLUDE_DIR}/mpfrxx_mkII.h"
+            AND NOT EXISTS "${GMPFRXX_MKII_INCLUDE_DIR}/gmpfrxx_mkII.h")
+        unset(GMPFRXX_MKII_INCLUDE_DIR CACHE)
+    endif()
     if(NOT GMPFRXX_MKII_INCLUDE_DIR)
         find_path(VMPLAPACK_DETECTED_GMPFRXX_MKII_INCLUDE_DIR
             NAMES mpfrxx_mkII.h gmpfrxx_mkII.h
@@ -42,6 +68,13 @@ if(VMPLAPACK_ENABLE_MPFR)
     if(NOT GMPFRXX_MKII_INCLUDE_DIR)
         message(FATAL_ERROR "M2 MPFR API probe failed: missing gmpfrxx_mkII headers (set GMPFRXX_MKII_INCLUDE_DIR)")
     endif()
+
+    vmplapack_clear_missing_header(GMP_INCLUDE_DIR gmp.h)
+    vmplapack_clear_missing_header(MPFR_INCLUDE_DIR mpfr.h)
+    vmplapack_clear_missing_header(MPC_INCLUDE_DIR mpc.h)
+    vmplapack_clear_missing_library(GMP_LIBRARY)
+    vmplapack_clear_missing_library(MPFR_LIBRARY)
+    vmplapack_clear_missing_library(MPC_LIBRARY)
 
     find_path(GMP_INCLUDE_DIR
         NAMES gmp.h
@@ -89,8 +122,8 @@ if(VMPLAPACK_ENABLE_MPFR)
             "${MPFR_INCLUDE_DIR}")
     target_link_libraries(vmplapack_mpfr_deps INTERFACE "${MPFR_LIBRARY}" "${GMP_LIBRARY}")
 
-    target_compile_definitions(vmplapack INTERFACE VMPLAPACK_ENABLE_MPFR)
-    target_link_libraries(vmplapack INTERFACE vmplapack::mpfr_deps)
+    target_compile_definitions(vmplapack PUBLIC VMPLAPACK_ENABLE_MPFR)
+    target_link_libraries(vmplapack PUBLIC vmplapack::mpfr_deps)
 
     set(_vmplapack_probe_required_includes "${GMPFRXX_MKII_INCLUDE_DIR};${GMP_INCLUDE_DIR};${MPFR_INCLUDE_DIR}")
     set(_vmplapack_probe_required_libraries "${MPFR_LIBRARY};${GMP_LIBRARY}")
@@ -165,7 +198,7 @@ if(VMPLAPACK_ENABLE_MPFR)
 endif()
 
 if(VMPLAPACK_USE_DEKKER_TWOPRODUCT)
-    target_compile_definitions(vmplapack INTERFACE VMPLAPACK_USE_DEKKER_TWOPRODUCT)
+    target_compile_definitions(vmplapack PUBLIC VMPLAPACK_USE_DEKKER_TWOPRODUCT)
 endif()
 
 if(VMPLAPACK_ENABLE_TESTS)
@@ -189,6 +222,26 @@ if(VMPLAPACK_ENABLE_TESTS)
             add_executable(test_Rdot_oracle_generators tests/test_Rdot_oracle_generators.cpp)
             target_link_libraries(test_Rdot_oracle_generators PRIVATE vmplapack::vmplapack)
             add_test(NAME test_Rdot_oracle_generators COMMAND test_Rdot_oracle_generators)
+
+            add_executable(test_Raccurate tests/test_Raccurate.cpp)
+            target_link_libraries(test_Raccurate PRIVATE vmplapack::vmplapack)
+            add_test(NAME test_Raccurate_native COMMAND test_Raccurate)
+            add_test(NAME test_Raccurate_mpfr_w53 COMMAND test_Raccurate)
+            set_tests_properties(test_Raccurate_mpfr_w53
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")
+            add_test(NAME test_Raccurate_mpfr_w512 COMMAND test_Raccurate)
+            set_tests_properties(test_Raccurate_mpfr_w512
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+
+            add_executable(test_Rverified tests/test_Rverified.cpp)
+            target_link_libraries(test_Rverified PRIVATE vmplapack::vmplapack)
+            add_test(NAME test_Rverified_native COMMAND test_Rverified)
+            add_test(NAME test_Rverified_mpfr_w53 COMMAND test_Rverified)
+            set_tests_properties(test_Rverified_mpfr_w53
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")
+            add_test(NAME test_Rverified_mpfr_w512 COMMAND test_Rverified)
+            set_tests_properties(test_Rverified_mpfr_w512
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
         endif()
     endif()
 endif()
@@ -202,4 +255,24 @@ if(VMPLAPACK_ENABLE_EXAMPLES)
 
     add_executable(example_m1_high_condition_dot_preview examples/example_m1_high_condition_dot_preview.cpp)
     target_link_libraries(example_m1_high_condition_dot_preview PRIVATE vmplapack::vmplapack)
+
+    if(VMPLAPACK_ENABLE_MPFR)
+        add_executable(example_m2_mpfr_tier examples/example_m2_mpfr_tier.cpp)
+        target_link_libraries(example_m2_mpfr_tier PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_m3_oracle_generators examples/example_m3_oracle_generators.cpp)
+        target_link_libraries(example_m3_oracle_generators PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_m4_accurate_dot examples/example_m4_accurate_dot.cpp)
+        target_link_libraries(example_m4_accurate_dot PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_m4_accurate_sum examples/example_m4_accurate_sum.cpp)
+        target_link_libraries(example_m4_accurate_sum PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_vRdot examples/example_vRdot.cpp)
+        target_link_libraries(example_vRdot PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_vRresidual examples/example_vRresidual.cpp)
+        target_link_libraries(example_vRresidual PRIVATE vmplapack::vmplapack)
+    endif()
 endif()
