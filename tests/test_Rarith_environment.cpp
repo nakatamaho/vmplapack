@@ -24,6 +24,12 @@
 
 namespace {
 
+#if defined(__GNUC__) || defined(__clang__)
+#define VMPLAPACK_TEST_NOINLINE __attribute__((noinline))
+#else
+#define VMPLAPACK_TEST_NOINLINE
+#endif
+
 template <class REAL>
 void require(bool condition, const char* tier, const char* message) {
     if (!condition) {
@@ -33,22 +39,28 @@ void require(bool condition, const char* tier, const char* message) {
 }
 
 template <class REAL>
-REAL runtime_add(REAL a, REAL b) {
+VMPLAPACK_TEST_NOINLINE REAL runtime_add(REAL a, REAL b) {
     volatile REAL va = a;
     volatile REAL vb = b;
+#if defined(__GNUC__) || defined(__clang__)
+    asm volatile("" : "+m"(va), "+m"(vb) :: "memory");
+#endif
     REAL x = va;
     REAL y = vb;
-    REAL z = x + y;
+    volatile REAL z = x + y;
     return z;
 }
 
 template <class REAL>
-REAL runtime_mul(REAL a, REAL b) {
+VMPLAPACK_TEST_NOINLINE REAL runtime_mul(REAL a, REAL b) {
     volatile REAL va = a;
     volatile REAL vb = b;
+#if defined(__GNUC__) || defined(__clang__)
+    asm volatile("" : "+m"(va), "+m"(vb) :: "memory");
+#endif
     REAL x = va;
     REAL y = vb;
-    REAL z = x * y;
+    volatile REAL z = x * y;
     return z;
 }
 
@@ -74,11 +86,11 @@ REAL directed_sum_up(REAL a, REAL b, REAL c) {
     using A = vmplapack::Rarith<REAL>;
     typename A::round_up g;
     REAL acc = A::zero();
-    REAL t0 = acc + a;
+    REAL t0 = runtime_add(acc, a);
     acc = t0;
-    REAL t1 = acc + b;
+    REAL t1 = runtime_add(acc, b);
     acc = t1;
-    REAL t2 = acc + c;
+    REAL t2 = runtime_add(acc, c);
     acc = t2;
     return acc;
 }
@@ -88,11 +100,11 @@ REAL directed_sum_down(REAL a, REAL b, REAL c) {
     using A = vmplapack::Rarith<REAL>;
     typename A::round_down g;
     REAL acc = A::zero();
-    REAL t0 = acc + a;
+    REAL t0 = runtime_add(acc, a);
     acc = t0;
-    REAL t1 = acc + b;
+    REAL t1 = runtime_add(acc, b);
     acc = t1;
-    REAL t2 = acc + c;
+    REAL t2 = runtime_add(acc, c);
     acc = t2;
     return acc;
 }
@@ -220,6 +232,8 @@ void test_tier(const char* tier) {
 }
 
 } // namespace
+
+#undef VMPLAPACK_TEST_NOINLINE
 
 int main() {
     test_tier<float>("float");
