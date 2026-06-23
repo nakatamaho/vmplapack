@@ -24,6 +24,7 @@ struct Rarith<float> {
     static float one() noexcept { return 1.0f; }
     static float half() noexcept { return 0.5f; }
     static float infinity() noexcept { return std::numeric_limits<float>::infinity(); }
+    static float eta() noexcept { return std::numeric_limits<float>::denorm_min(); }
     static bool is_finite(float x) noexcept { return std::isfinite(x); }
     static float abs(float x) noexcept { return std::fabs(x); }
     static float fma(float a, float b, float c) noexcept { return std::fmaf(a, b, c); }
@@ -61,6 +62,7 @@ struct Rarith<double> {
     static double one() noexcept { return 1.0; }
     static double half() noexcept { return 0.5; }
     static double infinity() noexcept { return std::numeric_limits<double>::infinity(); }
+    static double eta() noexcept { return std::numeric_limits<double>::denorm_min(); }
     static bool is_finite(double x) noexcept { return std::isfinite(x); }
     static double abs(double x) noexcept { return std::fabs(x); }
     static double fma(double a, double b, double c) noexcept { return std::fma(a, b, c); }
@@ -119,6 +121,14 @@ struct Rarith<mpfrxx::mpfr_class> {
         mpfrxx::mpfr_class inf = mpfrxx::mpfr_class::with_precision(static_cast<mpfr_prec_t>(precision_bits()));
         mpfr_set_inf(inf.mpfr_data(), 1);
         return inf;
+    }
+
+    static mpfrxx::mpfr_class eta() {
+        mpfrxx::mpfr_class value =
+            mpfrxx::mpfr_class::with_precision(static_cast<mpfr_prec_t>(precision_bits()));
+        mpfr_exp_t exponent = mpfr_get_emin() - 1;
+        mpfr_set_ui_2exp(value.mpfr_data(), 1, exponent, MPFR_RNDN);
+        return value;
     }
 
     static bool is_finite(const mpfrxx::mpfr_class& x) noexcept { return mpfr_number_p(x.mpfr_data()) != 0; }

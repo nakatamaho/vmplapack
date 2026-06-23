@@ -19,7 +19,9 @@ include(CheckCXXSourceCompiles)
 add_library(vmplapack
     src/Rdot.cpp
     src/Rsum.cpp
+    src/Rsum_abs_dot_upper.cpp
     src/vRdot.cpp
+    src/vRdot_apriori.cpp
     src/vRresidual.cpp
     src/vRsum.cpp)
 add_library(vmplapack::vmplapack ALIAS vmplapack)
@@ -242,6 +244,16 @@ if(VMPLAPACK_ENABLE_TESTS)
             add_test(NAME test_Rverified_mpfr_w512 COMMAND test_Rverified)
             set_tests_properties(test_Rverified_mpfr_w512
                 PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+
+            add_executable(test_Rdot_apriori tests/test_Rdot_apriori.cpp)
+            target_link_libraries(test_Rdot_apriori PRIVATE vmplapack::vmplapack)
+            add_test(NAME test_Rdot_apriori_native COMMAND test_Rdot_apriori)
+            add_test(NAME test_Rdot_apriori_mpfr_w53 COMMAND test_Rdot_apriori)
+            set_tests_properties(test_Rdot_apriori_mpfr_w53
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")
+            add_test(NAME test_Rdot_apriori_mpfr_w512 COMMAND test_Rdot_apriori)
+            set_tests_properties(test_Rdot_apriori_mpfr_w512
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
         endif()
     endif()
 endif()
@@ -274,5 +286,8 @@ if(VMPLAPACK_ENABLE_EXAMPLES)
 
         add_executable(example_vRresidual examples/example_vRresidual.cpp)
         target_link_libraries(example_vRresidual PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_m7_apriori_bound examples/example_m7_apriori_bound.cpp)
+        target_link_libraries(example_m7_apriori_bound PRIVATE vmplapack::vmplapack)
     endif()
 endif()

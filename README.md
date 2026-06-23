@@ -46,6 +46,9 @@ For `status == unbounded`, the certificate is still valid but useless: `rad == +
 
 Verification means interval inclusion, not closeness to an MPFR point. Tests compare verified intervals against an MPFR oracle interval `[ref_lo, ref_hi]`.
 
+See `ROUTINES.md` for the user-facing behavior of `vRdot` and `vRdot_apriori`, including how to
+interpret `mid`, `rad`, and `status`.
+
 ## Boundary Rules
 
 Accurate routines follow the bare BLAS-style contract:
@@ -143,6 +146,7 @@ example_vRdot
 example_vRresidual
 example_m4_accurate_dot
 example_m4_accurate_sum
+example_m7_apriori_bound
 example_m3_oracle_generators
 ```
 
