@@ -3,7 +3,7 @@ Copyright (c) 2026, NAKATA Maho
 SPDX-License-Identifier: BSD-2-Clause
 -->
 
-# Task: vMPLAPACK — verified / accurate `sum` and `dot` kernels (standalone prototype)
+# Task: vMPLAPACK ― verified / accurate `sum` and `dot` kernels (standalone prototype)
 
 You are an autonomous coding agent. Build **vMPLAPACK**: a small, self-contained C++17
 library of **accurate** and **verified** reductions (`sum`, `dot`), in the MPLAPACK idiom,
@@ -17,14 +17,14 @@ REAL = mpfrxx::mpfr_class      // MPFR via gmpfrxx_mkII, FIXED working precision
 ```
 
 All three tiers have a correctly-rounded FMA and runtime directed rounding, so the *same*
-generic algorithms run on every tier. This is a sandbox prototype — **not** an MPLAPACK patch.
+generic algorithms run on every tier. This is a sandbox prototype ― **not** an MPLAPACK patch.
 
 This spec has been hardened against subtle soundness traps (operand aliasing, overflow/underflow
 of bounds, NaN-vs-Inf classification, empty/invalid inputs, MPFR fixed-precision semantics, oracle
 rounding, condition-aware testing). **These hardening rules are load-bearing for the word
-"verified" — do not relax them.**
+"verified" ― do not relax them.**
 
-Implement **milestone by milestone (M0 → M6)**, one commit/PR per milestone; do **not** start a
+Implement **milestone by milestone (M0 → M11)**, one commit/PR per milestone; do **not** start a
 milestone until the previous one's acceptance tests pass. If you find a reason to deviate from the
 signatures, `Rmidrad`/`Rstatus`, the `Rarith<REAL>` interface, the preconditions (§6), the
 boundary rules (§8), or the rounding contract (§9), **stop and report** instead of silently
@@ -49,10 +49,10 @@ SIMD, threading, GPU.
 
 ## 1. Two concepts, kept distinct
 
-- **Accurate** (`Rsum`, `Rdot`): a *better approximation* (≈ twice-working-precision via
+- **Accurate** (`Rsum`, `Rdot`): a *better approximation* ( twice-working-precision via
   compensation). **No certificate.** Returns a bare `REAL`.
 - **Verified** (`vRsum`, `vRdot`, `vRresidual`): an approximation **plus a rigorous, guaranteed
-  bound** as a midpoint–radius (midrad) enclosure `true ∈ [mid - rad, mid + rad]`, `rad >= 0`,
+  bound** as a midpointradius (midrad) enclosure `true ∈ [mid - rad, mid + rad]`, `rad >= 0`,
   together with a `Rstatus`. "Close to the MPFR value" is **not** verification; interval
   **inclusion** is.
 
@@ -92,7 +92,7 @@ restoring the prior mode in the destructor; copy/move deleted. `float`: p=24, u=
 `std::numeric_limits<REAL>::infinity()`. `is_finite`→`std::isfinite`; `abs`→`std::fabs`.
 `precision_bits()` returns a signed `long`.
 
-### 2.2 `Rarith<mpfrxx::mpfr_class>` (verified against the gmpfrxx_mkII source; still probe — §9.3 / M2)
+### 2.2 `Rarith<mpfrxx::mpfr_class>` (verified against the gmpfrxx_mkII source; still probe ― §9.3 / M2)
 
 Header `#include <gmpfrxx_mkII.h>` (or MPFR-only `#include <mpfrxx_mkII.h>`). Namespace `mpfrxx`;
 type `mpfrxx::mpfr_class`. Working precision `W` is FIXED (§10). API to use:
@@ -102,7 +102,7 @@ type `mpfrxx::mpfr_class`. Working precision `W` is FIXED (§10). API to use:
   rounding mode and restores it; already non-copyable):
   `struct round_up { mpfrxx::rounding_mode_scope s_{MPFR_RNDU}; };` and `MPFR_RNDD` for `round_down`.
 - `precision_bits()` → `static_cast<long>(mpfrxx::default_prec())` (== `W`); **signed**.
-- `unit_roundoff()`: build `2^-W` with a SIGNED exponent — never write `-precision_bits()` if it
+- `unit_roundoff()`: build `2^-W` with a SIGNED exponent ― never write `-precision_bits()` if it
   could be unsigned:
   ```cpp
   mpfrxx::mpfr_class u = mpfrxx::mpfr_class::with_precision(precision_bits());
@@ -207,7 +207,7 @@ inputs is overflow → `unbounded` (see §6.3). Do not re-add "or NaN produced" 
 
 ---
 
-## 5. Public API (`include/vmplapack/vmpblas.h`) — BLAS-consistent argument order
+## 5. Public API (`include/vmplapack/vmpblas.h`) ― BLAS-consistent argument order
 
 ```cpp
 namespace vmplapack {
@@ -270,22 +270,22 @@ subnormals are not flushed (§9), and rounding is round-to-nearest. `Rfasttwosum
 requires `abs(a) >= abs(b)`.
 
 `Rtwoproduct` reconstructs `a*b = p+e` *exactly* under the same conditions **and** when the exact
-residual `a*b - fl(a*b)` is representable in the working format — i.e. when the leading product does
+residual `a*b - fl(a*b)` is representable in the working format ― i.e. when the leading product does
 **not** overflow **and does not underflow**. Under product underflow, `e = fma(a,b,-p)` is the
 *correctly-rounded* residual but not necessarily the *exact* one. Therefore: tests that assert exact
 `hi+lo` reconstruction must avoid product underflow as well as overflow. Underflow / subnormal cases
 are tested as **robustness** cases (correct status, valid enclosure), **not** as exact-TwoProduct
 cases, unless a theorem + implementation path covering underflow is explicitly added.
 
-### 6.3 Verified certificate semantics (NaN / Inf classification — single source of truth)
+### 6.3 Verified certificate semantics (NaN / Inf classification ― single source of truth)
 
 Verified routines must **first scan all inputs**. If any input is NaN or Inf, return
 `status == non_finite` and **claim no certificate** (the true value is not a finite real). Use
-`is_finite` for this scan (it is false for both NaN and Inf — no NaN/Inf distinction is needed).
+`is_finite` for this scan (it is false for both NaN and Inf ― no NaN/Inf distinction is needed).
 
 After all inputs are confirmed finite, the true real value is finite, so **any** non-finite endpoint,
 midpoint, or radius produced by the directed passes or by midrad construction is overflow / loss of
-finite bounds: return `status == unbounded` with `mid = 0`, `rad = +inf` — the valid but useless
+finite bounds: return `status == unbounded` with `mid = 0`, `rad = +inf` ― the valid but useless
 enclosure `[-inf, +inf]`. **Never claim finite verification for an overflowed native computation.**
 
 `Rmake_midrad` (§7.3) assumes input non-finiteness has **already** been classified by the caller; it
@@ -296,7 +296,7 @@ enclosure and maps any residual non-finiteness/invariant breach to `unbounded`.
 
 ## 7. Algorithms
 
-### 7.1 EFT (`vmplapack_eft.h`) — by value, default round-to-nearest
+### 7.1 EFT (`vmplapack_eft.h`) ― by value, default round-to-nearest
 
 ```cpp
 // a + b = s + e exactly,  s = fl(a + b)   (Knuth TwoSum, branch-free, alias-safe)
@@ -332,7 +332,7 @@ factor `2^ceil(p/2)+1`: float `0x1p12f+1`, double `0x1p27+1`, mpfr `2^ceil(W/2)+
 `factor*a` does not overflow and subnormals are not flushed**; extreme-magnitude tests must avoid
 split overflow or expect `unbounded`/`non_finite`.
 
-### 7.2 `Rsum` — Sum2; `Rdot` — Dot2 (Ogita–Rump–Oishi), guarded + fully materialized
+### 7.2 `Rsum` ― Sum2; `Rdot` ― Dot2 (OgitaRumpOishi), guarded + fully materialized
 
 ```text
 Rsum:
@@ -356,7 +356,7 @@ Rdot:
     return res
 ```
 
-### 7.3 Midrad helpers (`vmplapack_utils.h`) — shared by M5 and M6
+### 7.3 Midrad helpers (`vmplapack_utils.h`) ― shared by M5 and M6
 
 ```cpp
 #include <cassert>
@@ -409,7 +409,7 @@ Rmidrad<REAL> Rmake_midrad(REAL lo, REAL hi, REAL mid) {
 whole interval), and never discards a finite directed enclosure merely because the accurate midpoint
 failed.
 
-### 7.4 `vRdot` — verified via directed-rounding enclosure
+### 7.4 `vRdot` ― verified via directed-rounding enclosure
 
 ```text
 1. Validate per §8 (n<0/inc/pointer -> invalid_input; n==0 -> {zero,zero,ok}).
@@ -426,25 +426,25 @@ failed.
 Plain product + add only (no FMA) so both passes are structurally identical on every tier.
 Materialize each `prod` and each `acc`. `vRsum` is the same without the product step.
 
-### 7.5 M6 upgrade — accurate *and* verified
+### 7.5 M6 upgrade ― accurate *and* verified
 
 Same `[inf, sup]` enclosure; sharpen the midpoint with Dot2:
 
 ```text
 mid = Rdot(x, y)                 // accurate midpoint, ambient round-to-nearest
 return Rmake_midrad(inf, sup, mid)   // if mid is non-finite while [inf,sup] finite, the helper
-                                     // falls back to Rmidpoint(inf,sup) — finite enclosure kept
+                                     // falls back to Rmidpoint(inf,sup) ― finite enclosure kept
 ```
 
 Still rigorous (§7.3), now accurate, with no analytical constant.
 
-*(Optional)* Also implement the ORO a-priori Dot2 bound `|res − xᵀy| ≤ u·|res| + γ·Σ|xᵢyᵢ|` and
-compare tightness. Two hard requirements: take the **exact** `γ` (subscript + validity `n·u < 1`)
-from ORO 2005; and `Σ|xᵢyᵢ|` must be a rigorous **upper bound** — compute it by an **upward-directed
+*(Optional)* Also implement the ORO a-priori Dot2 bound `|res － xy|  u|res| + γΣ|xy|` and
+compare tightness. Two hard requirements: take the **exact** `γ` (subscript + validity `nu < 1`)
+from ORO 2005; and `Σ|xy|` must be a rigorous **upper bound** ― compute it by an **upward-directed
 pass** (or take the upper endpoint of `vRdot(|x|, |y|)`), **never** via accurate `Rdot`. Round the
 whole expression outward.
 
-### 7.6 `vRresidual` — r = b - A x (sign-correct)
+### 7.6 `vRresidual` ― r = b - A x (sign-correct)
 
 ```text
 Validate per §8 (m<0/n<0 -> invalid_input; m==0 -> ok, write nothing; m>0,n==0 -> r_i = b_i).
@@ -456,7 +456,7 @@ For each row i:
 Return the worst status by Rstatus_rank over all written rows.
 ```
 
-Each pass starts from `b_i` and adds `(-A[i,j])*x[j]` (NOT `-b_i` plus `A·x`). Example-level only;
+Each pass starts from `b_i` and adds `(-A[i,j])*x[j]` (NOT `-b_i` plus `Ax`). Example-level only;
 do **not** build a solver.
 
 ---
@@ -506,7 +506,7 @@ guarantee disabling every rounding-affected optimization, so **also** add, in ea
 #pragma STDC FP_CONTRACT OFF
 ```
 
-and put this guard in the umbrella header (so any fast-math downstream build fails to compile —
+and put this guard in the umbrella header (so any fast-math downstream build fails to compile ―
 this compile-time rejection is the PRIMARY required safeguard):
 
 ```cpp
@@ -515,7 +515,7 @@ this compile-time rejection is the PRIMARY required safeguard):
 #endif
 ```
 
-Require `FLT_EVAL_METHOD == 0` (no x87 excess precision — also what makes the `float` tier sound,
+Require `FLT_EVAL_METHOD == 0` (no x87 excess precision ― also what makes the `float` tier sound,
 since float ops must round to binary32); on 32-bit x86 add `-mfpmath=sse -msse2`:
 
 ```cpp
@@ -544,7 +544,7 @@ d) the directed passes bracket a known hard case.
 
 Negative fast-math test: the PRIMARY required behavior is **compile-time rejection** via the
 `__FAST_MATH__` guard. Optionally also add a hand-crafted inclusion test that fails **if the guard is
-intentionally disabled**. Do **not** require arbitrary `-ffast-math` builds to fail numerically — they
+intentionally disabled**. Do **not** require arbitrary `-ffast-math` builds to fail numerically ― they
 may not, and not failing does not imply soundness.
 
 ---
@@ -575,7 +575,7 @@ ref_hi = naive dot at precision P, MPFR_RNDU     // >= true
 ```
 
 `P` selection: start from `P = max(512, 4*precision_bits(tier) + 64)` as a heuristic; the **rigorous
-safeguard is precision doubling** — also compute `[ref_lo, ref_hi]` at `2P` and require the two
+safeguard is precision doubling** ― also compute `[ref_lo, ref_hi]` at `2P` and require the two
 intervals to agree to far below the tier's `u`. Large exponent spans / deep cancellation can need
 more than the heuristic; widen `P` until the doubling check passes. Materialize each oracle op into
 `mpfr_class`; keep MPFR FMA auto-fusion off.
@@ -591,11 +591,11 @@ Exact input widening into the oracle (oracle must see the *same* numbers):
 ## 11. Tests
 
 Lightweight framework of your choice. Every test states the failure it catches. Run the suite for
-**all four** instantiations: `float`; `double`; `mpfr_class @ W=53` (mirrors binary64 precision —
+**all four** instantiations: `float`; `double`; `mpfr_class @ W=53` (mirrors binary64 precision ―
 cross-check at equal precision; unbounded exponent range, NOT bit-exact binary64); `mpfr_class @
 W=512` (primary working precision).
 
-### 11.1 Accurate kernels — condition-aware (do NOT use `|got-ref| <= C*u*|ref|`)
+### 11.1 Accurate kernels ― condition-aware (do NOT use `|got-ref| <= C*u*|ref|`)
 
 A bare relative test breaks under cancellation / exact zero. Use the Dot2 error shape with a rigorous
 **upper bound** on the term sum:
@@ -610,10 +610,10 @@ require |got - ref| <= u_tier*|ref| + C * u_tier^2 * S_hi + floor
 This passes Dot2 yet fails a non-compensated dot (error ~ `u*S` ≫ `u^2*S` when `S ≫ |ref|`). The
 criterion is an explicit **test heuristic** (constant `C`) unless the exact ORO theorem constant is
 implemented; if the oracle interval width is not negligible vs the right-hand side, increase `P`. Do
-**not** use a native "smallest-normal" floor for the mpfr tier — the oracle-width floor above is
+**not** use a native "smallest-normal" floor for the mpfr tier ― the oracle-width floor above is
 correct for every tier.
 
-### 11.2 Verified inclusion — enclose the oracle INTERVAL (core tests)
+### 11.2 Verified inclusion ― enclose the oracle INTERVAL (core tests)
 
 ```text
 m = vRdot(...)
@@ -625,7 +625,7 @@ require (m.mid - m.rad) <= ref_lo  AND  ref_hi <= (m.mid + m.rad)     // in mpfr
 Must fail if the verified interval does not cover `[ref_lo, ref_hi]`; `rad < 0`; `status == ok` with a
 non-finite produced; or a fast-math/contraction build changes the result. For deliberately overflowing
 inputs require `status == unbounded` (valid `[-inf,+inf]`); for non-finite inputs require
-`non_finite` — never a false finite certificate.
+`non_finite` ― never a false finite certificate.
 
 ### 11.3 Case taxonomy (each kernel, each tier)
 
@@ -635,7 +635,7 @@ magnitudes (expect `unbounded`), non-finite inputs (expect `non_finite`), invali
 (expect `invalid_input` for verified; debug-assert for accurate), random (fixed seed). Strides
 `incx==1` and non-unit (e.g. 3).
 
-### 11.4 Deterministic ill-conditioned generators (`tests/Rgendot.h`) — random is deferred
+### 11.4 Deterministic ill-conditioned generators (`tests/Rgendot.h`) ― random is deferred
 
 Specify deterministic families first (a free-form `gendot` yields inconsistent condition numbers):
 
@@ -645,13 +645,13 @@ Family B (two-term):  x = [1, 1],  y = [1, y2]  with y2 exactly representable; e
 Family C (exponent-cancellation, reaches cond > 1/u):
     x = [2^j, s, 2^j],  y = [1, 1, -1]   (integer j, small exact s; the two 2^j terms cancel).
     Placing s BETWEEN the large terms forces sequential accumulation to round 2^j + s -> 2^j when
-    j >= W, losing s.  true dot = s ;  cond ≈ 2^{j+2}/|s|.
+    j >= W, losing s.  true dot = s ;  cond  2^{j+2}/|s|.
 ```
 
 **Construct the powers 2^j EXACTLY in the target tier.** Native: `std::ldexp` only within the native
-exponent range. mpfr: `mpfr_set_ui_2exp(_, 1, j, MPFR_RNDN)` at precision `W` — **never** create these
-values via `double`. `cond = 2·Σ|x_iy_i|/|x'y|`. Because `1/u` differs per tier, include Family C
-cases that **exceed** it: mpfr W=512 → `(j,s)=(520,1),(600,1),(700,1)` (cond ≈ 2^521..2^701 ≫
+exponent range. mpfr: `mpfr_set_ui_2exp(_, 1, j, MPFR_RNDN)` at precision `W` ― **never** create these
+values via `double`. `cond = 2Σ|x_iy_i|/|x'y|`. Because `1/u` differs per tier, include Family C
+cases that **exceed** it: mpfr W=512 → `(j,s)=(520,1),(600,1),(700,1)` (cond  2^521..2^701 ≫
 1/u=2^512); double → `(53,1),(60,1)`; float → `(24,1),(30,1)`. Requirement: `Rdot` may be inaccurate
 beyond `cond ~ 1/u`, but `vRdot` **must always enclose** the true `s`. Also sweep a condition ramp
 (Family A/B) from `1e1` upward within each tier's range.
@@ -665,11 +665,11 @@ within a small **result-ulp** tolerance (ulp of the result magnitude, not of `2^
 overlap. (The exponent-range / subnormal differences between binary64 and unbounded-range mpfr are
 why bit-exact equality is not required; clamping mpfr's exponent range is out of scope.)
 
-### 11.6 EFT exactness tests — via MPFR high precision, not same-tier `hi + lo`
+### 11.6 EFT exactness tests ― via MPFR high precision, not same-tier `hi + lo`
 
 Computing `hi + lo` in the same tier re-rounds it. For random exact-reconstruction tests, widen
-`a, b, hi, lo` exactly to oracle precision `P` and check in MPFR that `exact(a∘b) == exact(hi) +
-exact(lo)` for `∘ ∈ {+, *}`. Crafted cases with a known decomposition may instead assert the exact
+`a, b, hi, lo` exactly to oracle precision `P` and check in MPFR that `exact(ab) == exact(hi) +
+exact(lo)` for ` ∈ {+, *}`. Crafted cases with a known decomposition may instead assert the exact
 `hi`/`lo` constants directly (no MPFR). In native-only builds (MPFR off), the MPFR-based exact tests
 are skipped; the crafted-constant tests still run.
 
@@ -712,9 +712,9 @@ how to build/run `ctest`. Reading list with identifiers:
 
 ```text
 - T. Ogita, S. M. Rump, S. Oishi, "Accurate Sum and Dot Product",
-  SIAM J. Sci. Comput. 26(6), 1955–1988, 2005. DOI: 10.1137/030601818.
+  SIAM J. Sci. Comput. 26(6), 19551988, 2005. DOI: 10.1137/030601818.
 - S. M. Rump, "Verification methods: Rigorous results using floating-point arithmetic",
-  Acta Numerica 19, 287–449, 2010. DOI: 10.1017/S096249291000005X.
+  Acta Numerica 19, 287449, 2010. DOI: 10.1017/S096249291000005X.
 - N. J. Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., SIAM, 2002.
   ISBN: 0-89871-521-0 / 978-0-89871-521-7. DOI: 10.1137/1.9780898718027.
 ```
@@ -723,33 +723,33 @@ how to build/run `ctest`. Reading list with identifiers:
 
 ## 14. Milestones (one PR each; pass acceptance before advancing)
 
-- **M0 — Skeleton + native arith.** Layout; CMake + `RoundingControl.cmake` (PUBLIC flags, pragmas,
+- **M0 ― Skeleton + native arith.** Layout; CMake + `RoundingControl.cmake` (PUBLIC flags, pragmas,
   `__FAST_MATH__` guard); `vmplapack_utils.h` (`Rstatus` incl. `unbounded`; `Rstatus_rank`; `Rmidrad`;
   `Rmidpoint`, `Rupward_abs_diff`, `Rmake_midrad` with lo>hi defensive check and midpoint fallback);
   `Rarith<float>`/`Rarith<double>` (signed `precision_bits`, `half/one/infinity`, non-copyable/movable
-  scopes); `test_Rarith_environment.cpp` (§9.3 a–d). *Accept:* builds; environment test green.
-- **M1 — EFT, native.** By-value `Rtwosum`/`Rfasttwosum`/`Rtwoproduct` (+ Dekker `Rsplit`).
+  scopes); `test_Rarith_environment.cpp` (§9.3 ad). *Accept:* builds; environment test green.
+- **M1 ― EFT, native.** By-value `Rtwosum`/`Rfasttwosum`/`Rtwoproduct` (+ Dekker `Rsplit`).
   Exact-reconstruction tests **including aliased calls** `Rtwosum(s,x,s,e)`, `Rtwosum(p,h,p,q)`, under
   §6.2 preconditions, for float and double, both TwoProduct paths; crafted-constant exact checks run
   native-only, random exact checks via MPFR widening (§11.6) when MPFR is enabled. *Accept:* exact
-  `a∘b=hi+lo` under §6.2, alias-safe.
-- **M2 — MPFR tier + API probe.** First a compile/configure probe verifying `mpfrxx::mpfr_class`,
+  `ab=hi+lo` under §6.2, alias-safe.
+- **M2 ― MPFR tier + API probe.** First a compile/configure probe verifying `mpfrxx::mpfr_class`,
   `mpfrxx::fma`, `mpfrxx::rounding_mode_scope` with `MPFR_RNDU/RNDD`, `mpfr_data()`/`get_mpfr_t()`, and
   a precision-setting constructor exist; **stop and report** the exact missing symbol if not. Then
   `Rarith<mpfrxx::mpfr_class>` (signed-cast 2^-W); re-run M1 EFT tests for mpfr at W=53 and W=512;
   assert `mpfr_get_prec == W`. *Accept:* probe passes; EFT exact on mpfr; all tiers co-equal.
-- **M3 — Oracle + generators.** `Rdot_oracle.h` returning `[ref_lo,ref_hi]` with precision-doubling
+- **M3 ― Oracle + generators.** `Rdot_oracle.h` returning `[ref_lo,ref_hi]` with precision-doubling
   self-check and exact widening; deterministic `Rgendot.h` (A/B/C, powers exact in-tier). *Accept:*
   oracle interval stable under `P→2P`; widening exact.
-- **M4 — Accurate.** `Rsum`/`Rdot` (guarded, materialized) + explicit instantiations + `extern
+- **M4 ― Accurate.** `Rsum`/`Rdot` (guarded, materialized) + explicit instantiations + `extern
   template`. Condition-aware tests (§11.1) on all tiers; cross-tier consistency (§11.5). *Accept:*
   condition-aware bound holds; double vs mpfr@53 agree under the restricted regime.
-- **M5 — Verified + residual.** `vRsum`/`vRdot` (directed enclosure via `Rmake_midrad`; non-finite
+- **M5 ― Verified + residual.** `vRsum`/`vRdot` (directed enclosure via `Rmake_midrad`; non-finite
   inputs→`non_finite`; overflow→`unbounded`; §8 validation); sign-correct `vRresidual` returning the
   worst `Rstatus`; examples. Inclusion-of-`[ref_lo,ref_hi]` tests across the sweep incl. Family C
   `cond > 1/u`, plus explicit overflow, non-finite, and invalid-input cases, on all tiers. *Accept:*
   inclusion never fails; statuses correct.
-- **M6 — Accurate + verified.** `mid = Rdot(...)` via `Rmake_midrad` (finite-enclosure fallback when
+- **M6 ― Accurate + verified.** `mid = Rdot(...)` via `Rmake_midrad` (finite-enclosure fallback when
   the accurate midpoint is non-finite). *(Optional)* ORO a-priori bound with `Σ|x_iy_i|` as a rigorous
   **upper** bound (upward pass), tightness comparison. README finalized. *Accept:* midpoint accuracy
   improves; inclusion still always holds.
@@ -791,3 +791,210 @@ how to build/run `ctest`. Reading list with identifiers:
 - Keep `float`, `double`, `mpfrxx::mpfr_class` strictly co-equal: one generic template per kernel; all
   tier differences live in `Rarith<REAL>`.
 - Soundness over tightness, correctness over cleverness. All code, identifiers, and comments in English.
+
+---
+# docs/SPEC.md §14 — addendum: milestones M7–M11
+
+Paste into `docs/SPEC.md §14` after M6. These consolidate the M0–M6 prototype into a shippable kernel
+library. **All of M7–M11 remain standalone (no MPLAPACK dependency).** Same rules as M0–M6: one PR per
+milestone; pass acceptance before advancing; do not change frozen contracts (§5/§6/§8/§9) without
+stopping to report.
+
+---
+
+- **M7 — ORO a-priori accuracy bound.** Promote the M6-optional bound to a routine. Implement
+  `vRdot_apriori<REAL>` returning an `Rmidrad<REAL>` whose `mid` is the Dot2 result (`Rdot`) and whose
+  `rad` is a **rigorous, outward-rounded, computable** bound derived from the Ogita–Rump–Oishi Dot2
+  a-priori estimate.
+
+  Definitions (fix precisely):
+  - `u` = **unit roundoff** = `2^-p` = ½ ulp(1), `p = Rarith<REAL>::precision_bits()`. (NOT machine
+    epsilon `2^-(p-1)`.)
+  - `γ_n = n*u / (1 − n*u)`, with the ORO validity condition `n*u < 1` (n = vector length).
+  - `S = Σ |x_i*y_i|`; compute `S_up >= S` with the **named primitive**
+    `Rsum_abs_dot_upper<REAL>(n, x, incx, y, incy) -> REAL` — in an **upward-rounding** scope, accumulate
+    `|x[i]|*|y[i]|` with **upward-rounded products and summation** (native `FE_UPWARD` / mpfr
+    `MPFR_RNDU`). It **must not** call accurate `Rdot`. It returns a bare `REAL` and yields `+inf` on
+    overflow; finite inputs are pre-checked by the caller (§6.3), so `+inf` here means overflow and is
+    mapped to `unbounded`.
+
+  The bound. The raw ORO Dot2 estimate is `|res − xᵀy| ≤ u|xᵀy| + γ_n²·S` (no underflow). Since `res`,
+  not `xᵀy`, is what we have, substitute `|xᵀy| ≤ |res| + |e|` and solve, giving the **computable**
+  form. A valid implementation:
+
+  ```text
+  rad >= outward( ( u*abs(mid) + γ_n^2 * S_up + underflow_term ) / (1 - u) )   # every op rounded outward
+  ```
+
+  - `underflow_term`: the **ORO 2005 Prop. 5.5 underflow term, `5*n*η`** (η = the underflow unit). For
+    native float/double `η = Rarith::eta() = denorm_min`. **For the mpfr tier, do NOT claim that the
+    wide exponent range prevents underflow** — products of very small values can fall below MPFR's
+    exponent lower bound. The implementation must either **(a)** check the MPFR underflow flag /
+    exponent condition for the bound pass and return `unbounded` (or include the term) if underflow
+    occurred, or **(b)** enforce and **test** a no-underflow precondition. (M7 adds `Rarith<REAL>::eta()`
+    — a sanctioned extension of §2; for mpfr it is the smallest representable, but the bound path relies
+    on (a)/(b), not on `eta` alone.)
+  - `1 − u > 0` always; round the division outward.
+
+  Gate. Evaluate `n*u < 1` **conservatively with integer arithmetic, never in floating point near the
+  boundary**. Since `u = 2^-p`, the exact condition is `n < 2^p`. Let `length_type` be the length
+  parameter's type (e.g. `mplapackint`/`std::ptrdiff_t`; a signed type's `digits` excludes the sign
+  bit). If `p >= std::numeric_limits<length_type>::digits`, then `2^p` exceeds every representable
+  length and the gate **passes** for all `n` — and `2^p` is not representable in the type, so do not try
+  to form it (this is the correct boundary: at `p == digits`, `length_type{1} << p` would be UB).
+  Otherwise compare `n < (length_type{1} << p)` exactly. If the gate cannot be decided exactly, fail
+  conservatively. When it fails (`n*u ≥ 1`), return `{ Rdot(x,y), +inf, unbounded }` — keep the Dot2
+  midpoint (still a useful approximation); only the radius is meaningless.
+
+  Disambiguation (write this in the code/SPEC): **this is the a-priori Dot2 estimate, NOT ORO Algorithm
+  5.8 `Dot2Err`.** `Dot2Err` is a separate pure-floating-point error-bound routine with a different
+  computable bound and a stronger `2*n*u < 1` gate. Do not implement one as the other.
+
+  Non-finite policy (matches the verified kernels, §6.3/§8): non-finite **input** → `non_finite`;
+  finite-input overflow in `res`, `S_up`, or the bound → `unbounded`; signed zeros via IEEE
+  (`Σ|·|` maps `−0`→`+0`).
+
+  Tie-in: once M7 lands, the M4 accurate-kernel test (§11.1) may be **strengthened** from the heuristic
+  `|got−ref| ≤ u|ref| + C·u²·S` to the rigorous `|got − ref| ≤ vRdot_apriori.rad` (the heuristic's fixed
+  `C` does not absorb the `γ_n²` n-growth; the M7 bound does).
+
+  *Tasks:* `Rsum_abs_dot_upper` (with the `+inf`-on-overflow contract); the outward bound with the
+  `/(1−u)` correction; the integer `n*u<1` gate; explicit underflow handling (`5*n*η` term **or** checked
+  no-underflow precondition) with `Rarith::eta()`; tightness comparison vs `vRdot.rad`. *Accept:*
+  `rad ≥ |mid − ref|` for ALL tested inputs on ALL tiers (incl. cancellation and, separately, underflow
+  cases); `Rsum_abs_dot_upper` proven `≥ S` against the oracle; the integer gate behaves correctly at
+  the boundary; tightness vs `vRdot.rad` reported. **Must not** use accurate `Rdot` for `S_up`.
+
+- **M8 — Random + adversarial high-condition generators.** Close the deferred random `gendot` (§11.4)
+  **and** add deterministic adversarial families. Implement a **seeded** Ogita–Rump–Oishi-style
+  randomized generator targeting a prescribed dot condition number, **and** deterministic adversarial
+  generators: heavy cancellation, alternating signs, huge/small scale mixing, and **input ordering
+  variants** (sorted, reversed, shuffled) of the same multiset. All tier values constructed **exactly
+  in-tier** per the **§10.2 exact-construction rule** (mpfr via `mpfr_set_ui_2exp`, native via in-range
+  `ldexp`; never through `double`).
+
+  Condition-number convention (fix it — the two differ by a factor 2): record **both**
+
+  ```text
+  cond_oro = 2 * S / |dot|        # the ORO 2005 definition (use this for acceptance/benchmark axes)
+  cond_sum =     S / |dot|        # the "sum of |x_i y_i|" convention
+  ```
+
+  Because `S = Σ|x_iy_i| ≥ |dot|`, for **nonzero** exact dot `cond_sum ≥ 1` and `cond_oro ≥ 2`; a finite
+  `target_cond < 2` is **invalid** under the ORO convention. If the exact `dot == 0` and `S > 0`, record
+  `cond_oro = cond_sum = +inf` — a valid adversarial case, but **excluded** from finite log-scale target
+  matching. Each generated case records `{target_cond, measured_cond_mpfr (= cond_oro from the oracle),
+  seed, scale, permutation, tier}`. The "true dot" is the **§10.2 oracle** (high precision, exponent-span
+  aware, precision-doubling self-checked) — not a bare W-bit mpfr evaluation.
+
+  *Accept:* `measured_cond_mpfr` matches `target_cond` in **log-scale** tolerance
+  (`|log10(measured) − log10(target)| ≤ δ`, **default `δ = 0.25` decades** unless a test case overrides
+  it), **or** the generator reports `unachievable` for that tier / length / exponent-range / target. The
+  error scalings match theory — **naive** dot follows the first-order scale `~γ_n·cond_sum`, equivalently
+  `~½·γ_n·cond_oro`; **`Rdot`/Dot2** follows the ORO Dot2 scaling `~u + ½·γ_n²·cond_oro` (NOT a crude
+  `cond ~ 1/u` threshold) — and `vRdot` **always** encloses across all seeds, conditions, orderings, and
+  tiers. (Apply the same correction to the §11.4 wording.)
+
+- **M9 — CI / sanitizers / fast-math negative compile + runtime rounding check.** CI builds the matrix
+  {native-only, MPFR-on} × {gcc, clang} × {Release, Debug}, running `ctest` incl. the separate W=53 /
+  W=512 mpfr suites; an ASan+UBSan Debug build required clean; the **fast-math negative compile test**
+  (`try_compile` with `-ffast-math` must **fail** via the `__FAST_MATH__` `#error`). Per §9.3, do
+  **not** require an arbitrary fast-math build to fail numerically — fast-math is a contract violation
+  to be **rejected**, not a numerical experiment.
+
+  **Separately and additionally**, run a **runtime contract sanity test in ordinary (accepted-flags)
+  builds**, the catch-all for dangerous flags with **no predefined macro** (`-ffp-contract=fast`,
+  `-fassociative-math`, `-funsafe-math-optimizations` cannot be compile-detected). It must include:
+  - a **directed-rounding test with constant-folding prevented** (use `volatile` inputs and
+    `#pragma STDC FENV_ACCESS ON` where supported). Typical `double` test, with runtime (non-folded)
+    values: under `FE_UPWARD`, `1.0 + 2^-53 > 1.0`; under `FE_DOWNWARD` (and nearest),
+    `1.0 + 2^-53 == 1.0`. Fail if the platform/compiler ignores the rounding mode;
+  - **EFT invariants** for `Rtwosum` / `Rfasttwosum` / `Rtwoproduct` (these catch FMA-contraction
+    breakage that a pure rounding test may miss); the EFT self-test must cover representative **normal,
+    subnormal, cancellation, large/small-scale, and signed-zero** cases;
+  - an **x86 FTZ/DAZ check** where available (subnormals not flushed), matching the ROADMAP architecture
+    note.
+
+  *Accept:* CI green across the matrix; ASan/UBSan clean; `-ffast-math` compile rejected; the runtime
+  contract sanity test (rounding + EFT invariants + FTZ/DAZ) green in every configuration.
+
+- **M10 — Packaging / install / export targets.** Add `install(TARGETS ... EXPORT vmplapackTargets)`,
+  header installation, `vmplapackConfig.cmake` + `vmplapackConfigVersion.cmake` so
+  `find_package(vmplapack)` works. Requirements:
+  - **Dependency policy:** if built with MPFR support, the installed config must
+    `find_dependency(MPFR)` and `find_dependency(GMP)` (or import equivalent targets); if built
+    native-only, `find_package(vmplapack)` must **not** require MPFR/GMP. `vmplapackConfig.cmake` must
+    `include(CMakeFindDependencyMacro)` before any `find_dependency` call.
+  - **Find-module policy:** CMake does **not** ship `FindMPFR.cmake`/`FindGMP.cmake`. The package must
+    either install compatible `FindMPFR`/`FindGMP` modules **or** depend on config packages that define
+    imported targets such as `MPFR::MPFR` and `GMP::GMP`. Do **not** assume CMake provides these.
+  - **Usage requirements:** export the FP contract on the target — **PUBLIC** for the compiled library,
+    **INTERFACE** for any interface/header-only target. Attach compiler-specific FP flags via **CMake
+    generator expressions** keyed on compiler ID (`$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:...>` etc.);
+    unsupported compilers must receive equivalent strict-FP flags or be rejected by configure-time
+    checks (do not put bare GCC/Clang flags in `INTERFACE_COMPILE_OPTIONS`).
+  - **Include dirs:** use `$<BUILD_INTERFACE:...>` / `$<INSTALL_INTERFACE:include>`.
+  - **Version policy:** use `ExactVersion` for all `0.x` releases (the API/ABI is unstable, so `0.1` and
+    `0.9` must NOT be treated as compatible); switch to `SameMajorVersion` only from `1.x`, after the
+    public API/ABI is declared stable. Provide a custom `vmplapackConfigVersion.cmake` if a finer rule
+    is needed.
+  - **Header guard is the real protection:** because a consumer can override `INTERFACE_COMPILE_OPTIONS`,
+    the umbrella `#ifdef __FAST_MATH__ #error ... #endif` must be present and is what actually stops a
+    fast-math consumer.
+  Add a separate `tests/consumer` project that `find_package`s the installed package, links
+  `vmplapack::vmplapack`, and builds a verified-dot example; it must **verify the FP flags are
+  inherited** (inspect `compile_commands.json`, or a small preprocessor/compile test that fails without
+  the strict-FP usage requirements). *Accept:* `cmake --install` then the consumer `find_package` + link
+  + compile succeeds; the consumer inherits the FP flags (verified, not assumed); a consumer adding
+  `-ffast-math` is rejected; native-only and MPFR-on packages both resolve dependencies correctly.
+
+- **M11 — Examples / benchmark suite (frozen schema).** Add a naive-vs-compensated-vs-verified driver
+  and a worked `vRresidual` example. Add a benchmark suite emitting a **frozen CSV/JSON schema** (fixed
+  now for reuse in M12+) with, per case, at least:
+
+  ```text
+  schema_version,
+  routine, tier, precision_bits, n, generator, seed,
+  target_cond, realized_cond_oro, realized_cond_sum,
+  status, enclosed,
+  elapsed_ns_total, time_ns_per_item, work_items, repetitions, statistic,
+  mid_error_abs, mid_error_rel,
+  radius, relative_radius,
+  compiler_id, compiler_version, build_type, fp_contract_flags,
+  cpu, os, git_sha, rounding_backend
+  ```
+
+  Disambiguate timing (a frozen schema must): `elapsed_ns_total` = total wall time for `repetitions`,
+  `time_ns_per_item` = `elapsed_ns_total / (repetitions * work_items)`, `statistic` = how repetitions
+  were reduced (e.g. `median`/`mean`). `status` is required: `enclosed` (boolean) alone loses the
+  `ok`/`unbounded`/`non_finite`/`invalid_input` distinction needed to compare M5/M7/M11 results. Missing-
+  value conventions for routines without an enclosure (naive/compensated): `status = ok`,
+  `enclosed = null`, `radius = null`, `relative_radius = null`; for `unbounded`: `radius = +inf`,
+  `enclosed = false`. Represent `null` explicitly (literal `null`, or a JSON sidecar — not a blank CSV
+  cell). Use `radius` (matching `Rmidrad.rad`), not `radius_width`. For a verified library,
+  `radius`/`relative_radius` and "up to what condition the certificate holds" matter as much as
+  throughput. Use the deterministic (M3) and random/adversarial (M8) generators. **Benchmarks are
+  buildable and runnable in CI *smoke* mode only; full sweeps are opt-in and labeled separately** so CI
+  stays light. *Accept:* examples build/run under all configs; the benchmark emits the frozen schema
+  (incl. `schema_version`, `status`, and the disambiguated timing fields, with the null/+inf
+  conventions) with per-tier timing, radius, and success-rate-vs-condition data; results documented in
+  the README.
+
+---
+
+*After M11: RELEASE LINE A — a packaged, CI'd, benchmarked verified/accurate `sum`/`dot` library
+("vMPLAPACK-core") over `float`, `double`, and MPFR, with no MPLAPACK dependency. The
+verified-linear-algebra phase (M12+, where the no-MPLAPACK constraint is lifted and the verification
+contract in `ROADMAP.md` applies) is specified separately when reached.*
+
+---
+
+## Reference
+
+```
+T. Ogita, S. M. Rump, S. Oishi, "Accurate Sum and Dot Product",
+SIAM J. Sci. Comput. 26(6), 1955–1988 (2005). DOI: 10.1137/030601818
+  - Prop. 5.5: Dot2 a-priori bound; underflow term 5·n·η.
+  - Cor. 5.7: relative error  u + ½·γ_n²·cond,  cond = 2·|x|ᵀ|y| / |xᵀy|  (= cond_oro).
+  - Alg. 5.8 (Dot2Err): the SEPARATE pure-FP error-bound routine, gate 2·n·u < 1 — not M7.
+```
