@@ -265,6 +265,194 @@ exact dot product is in [1 - 5.26e-97, 1 + 5.26e-97]
 This statement is produced without using the MPFR oracle. The oracle appears only in tests and
 diagnostic examples to check or explain the implementation.
 
+## M8 Ill-Conditioned Generators
+
+M8 adds generator routines in `vmplapack::gendot` for tests, diagnostics, and benchmark input
+construction. These are not BLAS kernels and are not part of the core installed numerical API yet, but
+they are product-level support routines for producing reproducible high-condition dot-product cases.
+They require `VMPLAPACK_ENABLE_MPFR` because their metadata uses the MPFR oracle.
+
+The basic generated dot container is:
+
+```cpp
+template <class REAL>
+struct Rdot_case {
+    std::vector<REAL> x;
+    std::vector<REAL> y;
+    REAL exact;
+};
+```
+
+M8 metadata is carried by:
+
+```cpp
+enum class Rgenerator_status {
+    ok,
+    invalid_target,
+    unachievable
+};
+
+enum class Rpermutation {
+    generated,
+    sorted,
+    reversed,
+    shuffled
+};
+
+template <class REAL>
+struct Rgenerated_dot_case {
+    Rdot_case<REAL> data;
+    Rgenerator_status status;
+    mpfrxx::mpfr_class target_cond_oro;
+    mpfrxx::mpfr_class measured_cond_oro;
+    mpfrxx::mpfr_class measured_cond_sum;
+    std::uint64_t seed;
+    int scale;
+    Rpermutation permutation;
+    const char* tier;
+};
+```
+
+Status meaning:
+
+```text
+ok              case generated and measured condition metadata is populated
+invalid_target  finite target condition is invalid under the ORO convention, such as target < 2
+unachievable    target cannot be represented for the tier, length, exponent range, or construction
+```
+
+Condition-number convention:
+
+```text
+S        = sum_i abs(x_i*y_i)
+cond_sum = S / abs(dot)
+cond_oro = 2*S / abs(dot)
+```
+
+`cond_oro` is the ORO 2005 convention and is the target/benchmark axis. For nonzero dot products,
+`cond_oro >= 2`. If the exact dot is zero and `S > 0`, both condition values are recorded as `+inf`.
+This is a valid adversarial case, but not a finite log-scale target.
+
+The measured condition fields are computed with the MPFR oracle interval and an upward high-precision
+absolute-term pass. They are not computed with same-tier `Rdot` and not with a bare W-bit mpfr dot.
+
+### Targeted Generator
+
+```cpp
+template <class REAL>
+Rgenerated_dot_case<REAL> randomized_high_condition_power2(int target_cond_power2,
+                                                           std::uint64_t seed,
+                                                           Rpermutation permutation,
+                                                           std::size_t pairs = 4U);
+```
+
+This constructs a multiset of cancelling `+/- 2^scale` terms plus one exact residual `1`. The target is
+
+```text
+target_cond_oro = 2^target_cond_power2
+```
+
+and `scale` is chosen so the measured ORO condition lands near the target. The generator uses the seed
+to choose pair order in the generated multiset; `shuffled` additionally shuffles the full multiset.
+`sorted` and `reversed` are ordering variants of the same values.
+
+A successful finite target is accepted in log scale:
+
+```text
+abs(log10(measured_cond_oro) - log10(target_cond_oro)) <= 0.25
+```
+
+If the target is below 2, the status is `invalid_target`. If the required scale is outside the tier's
+safe exponent construction range, the status is `unachievable`.
+
+### Deterministic Adversarial Families
+
+```cpp
+template <class REAL>
+Rgenerated_dot_case<REAL> adversarial_exact_cancellation(int scale,
+                                                         std::uint64_t seed,
+                                                         Rpermutation permutation);
+
+template <class REAL>
+Rgenerated_dot_case<REAL> adversarial_heavy_cancellation(int scale,
+                                                         std::uint64_t seed,
+                                                         Rpermutation permutation);
+
+template <class REAL>
+Rgenerated_dot_case<REAL> adversarial_alternating_signs(int pairs,
+                                                        int residual_exponent,
+                                                        std::uint64_t seed,
+                                                        Rpermutation permutation);
+
+template <class REAL>
+Rgenerated_dot_case<REAL> adversarial_huge_small_mixing(int large_exponent,
+                                                        int small_exponent,
+                                                        std::uint64_t seed,
+                                                        Rpermutation permutation);
+```
+
+The families cover:
+
+```text
+exact cancellation        nontrivial S with exact dot 0, condition +inf
+heavy cancellation        [2^scale, 1, -2^scale]-style cancellation
+alternating signs         many +/-1 terms plus a small exact residual
+huge/small scale mixing   large cancelling terms mixed with tiny cancelling terms and residual 1
+```
+
+All ordering variants must preserve the same multiset. They change evaluation order only; the exact dot
+and condition convention do not change.
+
+### Helper Routines
+
+The main subordinate helpers are:
+
+```cpp
+template <class REAL>
+REAL power_of_two(int exponent);
+
+template <class REAL>
+int max_power_exponent();
+
+template <class REAL>
+int min_power_exponent();
+
+template <class REAL>
+void measure_conditions(Rgenerated_dot_case<REAL>& result);
+
+template <class REAL>
+void apply_permutation(std::vector<Rterm<REAL>>& terms,
+                       Rpermutation permutation,
+                       std::uint64_t seed);
+```
+
+`power_of_two` is the exact-construction primitive: native tiers use in-range `std::ldexp`; MPFR uses
+`mpfr_set_ui_2exp` at the current fixed precision `W`. `measure_conditions` is the oracle-based
+metadata path. `apply_permutation` implements ordering variants without changing the multiset.
+
+### How To Use The Metadata
+
+Use `status` first. Only `status == ok` carries a generated case intended for numerical testing. Then
+use:
+
+```text
+data.x, data.y          inputs to Rdot/vRdot/vRdot_apriori
+measured_cond_oro       ORO condition number for plots and benchmark axes
+measured_cond_sum       sum convention, useful for naive-dot first-order scaling
+seed, scale             reproducibility metadata
+permutation             generated/sorted/reversed/shuffled ordering label
+```
+
+The M8 tests check two theoretical scales:
+
+```text
+naive dot:   about gamma_n * cond_sum = 0.5 * gamma_n * cond_oro
+Rdot/Dot2:   about u + 0.5 * gamma_n^2 * cond_oro
+```
+
+For every generated/adversarial case and every ordering, `vRdot` must enclose the MPFR oracle interval.
+`Rdot` is allowed to lose accuracy on high-condition inputs; verified inclusion is not allowed to fail.
+
 ## References
 
 - T. Ogita, S. M. Rump, S. Oishi, "Accurate Sum and Dot Product", SIAM J. Sci. Comput. 26(6),

@@ -262,23 +262,64 @@ Overflow inputs -> require unbounded; non-finite inputs -> require non_finite. N
 
 ## Skill 6 — Ill-conditioned test data (`Rgendot.h`)
 
-**Rule.** Use **deterministic** families with **exactly representable** values; random generation is
-deferred to later. `cond = 2·Σ|x_iy_i| / |x'y|`, and `1/u` differs per tier.
+**Rule.** Generated dot cases must have reproducible metadata and exactly constructed tier inputs.
+Condition-number targets use the ORO convention, not an implicit relative-error threshold.
 
 ```text
-Family A (alternating):  x_i = 1; y chosen so exact dot = δ.
-Family B (two-term):     x = [1, 1], y = [1, y2], y2 exactly representable; exact dot = 1 + y2.
-Family C (exponent-cancellation, reaches cond > 1/u):
-    x = [2^j, s, 2^j], y = [1, 1, -1]   (the two 2^j terms cancel; s is small & exact)
-    Place s BETWEEN the large terms so sequential accumulation rounds 2^j + s -> 2^j when j >= W,
-    losing s. true dot = s; cond ≈ 2^{j+2}/|s|.
-    Cases exceeding 1/u: mpfr W=512 -> (j,s)=(520,1),(600,1),(700,1); double -> (53,1),(60,1);
-    float -> (24,1),(30,1).
+cond_oro = 2 * sum_i |x_i*y_i| / |x'y|     # ORO 2005 convention
+cond_sum =     sum_i |x_i*y_i| / |x'y|     # sum convention
 ```
 
-Requirement across the sweep: `Rdot` may lose accuracy past `cond ~ 1/u`, but `vRdot` **must always
-enclose** the true value (radius widens; inclusion never fails). **Construct `2^j` exactly in the
-target tier** (Skill 4) — never through `double`.
+For nonzero exact dots, `cond_oro >= 2`. A finite target below 2 is invalid. For a nontrivial exact
+zero dot, record `cond_oro = cond_sum = +inf` and do not try to match a finite log-scale target.
+
+**Correct patterns.**
+
+```text
+Family A (alternating):  x_i = 1; y chosen so exact dot = delta.
+Family B (two-term):     x = [1, 1], y = [1, y2], y2 exactly representable; exact dot = 1 + y2.
+Family C (exponent-cancellation):
+    x = [2^j, s, 2^j], y = [1, 1, -1]
+    Place s between the large terms so naive sequential accumulation loses s when j >= W.
+M8 adversarial families:
+    heavy cancellation, alternating signs, huge/small scale mixing, exact nontrivial cancellation.
+Ordering variants:
+    generated, sorted, reversed, shuffled variants of the same multiset.
+```
+
+The seeded high-condition generator targets a finite `cond_oro` and records:
+
+```text
+target_cond, measured_cond_mpfr, measured cond_sum, seed, scale, permutation, tier, status
+```
+
+`measured_cond_mpfr` is computed from the §10.2 oracle interval and an upward high-precision absolute
+term sum, not from a bare W-bit mpfr dot. Acceptance is log-scale:
+
+```text
+|log10(measured_cond_mpfr) - log10(target_cond)| <= 0.25 decades
+```
+
+or the generator reports `unachievable` for that tier/length/exponent range/target.
+
+**Exact-construction rule.** Native powers use in-range `std::ldexp` in the target type. MPFR powers use
+`mpfr_set_ui_2exp` at the current fixed `W`. Never construct generator input values through `double`.
+
+**Scaling checks.** Test the variables in the theory, not a crude `cond ~ 1/u` cutoff:
+
+```text
+naive dot scale:  gamma_n * cond_sum = 0.5 * gamma_n * cond_oro
+Dot2/Rdot scale:  u + 0.5 * gamma_n^2 * cond_oro
+```
+
+Across all seeds, conditions, deterministic families, and orderings, `vRdot` must enclose the oracle
+interval. `Rdot` may lose accuracy; verified inclusion must not fail.
+
+**Anti-patterns.**
+- ❌ Reporting only one unnamed `cond` value — the factor-of-two convention matters.
+- ❌ Matching finite targets by ordinary relative error rather than log-scale tolerance.
+- ❌ Computing `S` or measured condition from accurate `Rdot`; use an upward absolute-term pass.
+- ❌ Letting shuffled/sorted/reversed variants change the multiset rather than only the order.
 
 ---
 

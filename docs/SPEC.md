@@ -635,26 +635,68 @@ magnitudes (expect `unbounded`), non-finite inputs (expect `non_finite`), invali
 (expect `invalid_input` for verified; debug-assert for accurate), random (fixed seed). Strides
 `incx==1` and non-unit (e.g. 3).
 
-### 11.4 Deterministic ill-conditioned generators (`tests/Rgendot.h`) ― random is deferred
+### 11.4 Ill-conditioned generators (`tests/Rgendot.h`)
 
-Specify deterministic families first (a free-form `gendot` yields inconsistent condition numbers):
+M8 closes the earlier random-generation deferral. `Rgendot.h` provides both deterministic adversarial
+families and a seeded randomized high-condition generator. All generated input values must be exactly
+constructed in the target tier: native `float`/`double` use in-range `std::ldexp`; mpfr uses
+`mpfr_set_ui_2exp(_, 1, j, MPFR_RNDN)` at precision `W`; no generator constructs tier inputs through
+`double`.
+
+Deterministic families:
 
 ```text
-Family A (alternating, target small dot):  x_i = 1;  y chosen so the exact dot = δ.
-Family B (two-term):  x = [1, 1],  y = [1, y2]  with y2 exactly representable; exact dot = 1 + y2.
-Family C (exponent-cancellation, reaches cond > 1/u):
-    x = [2^j, s, 2^j],  y = [1, 1, -1]   (integer j, small exact s; the two 2^j terms cancel).
-    Placing s BETWEEN the large terms forces sequential accumulation to round 2^j + s -> 2^j when
-    j >= W, losing s.  true dot = s ;  cond  2^{j+2}/|s|.
+Family A (alternating):  x_i = 1; y chosen so the exact dot = delta.
+Family B (two-term):     x = [1, 1], y = [1, y2], y2 exactly representable; exact dot = 1 + y2.
+Family C (exponent-cancellation):
+    x = [2^j, s, 2^j], y = [1, 1, -1]
+    The two 2^j terms cancel exactly; placing s between them makes naive sequential accumulation lose s
+    when j >= W. true dot = s.
+M8 adversarial families:
+    heavy cancellation, alternating signs, huge/small scale mixing, and exact nontrivial cancellation.
+Ordering variants:
+    generated, sorted, reversed, shuffled variants of the same multiset.
 ```
 
-**Construct the powers 2^j EXACTLY in the target tier.** Native: `std::ldexp` only within the native
-exponent range. mpfr: `mpfr_set_ui_2exp(_, 1, j, MPFR_RNDN)` at precision `W` ― **never** create these
-values via `double`. `cond = 2Σ|x_iy_i|/|x'y|`. Because `1/u` differs per tier, include Family C
-cases that **exceed** it: mpfr W=512 → `(j,s)=(520,1),(600,1),(700,1)` (cond  2^521..2^701 ≫
-1/u=2^512); double → `(53,1),(60,1)`; float → `(24,1),(30,1)`. Requirement: `Rdot` may be inaccurate
-beyond `cond ~ 1/u`, but `vRdot` **must always enclose** the true `s`. Also sweep a condition ramp
-(Family A/B) from `1e1` upward within each tier's range.
+Condition-number convention is fixed and both values are recorded:
+
+```text
+cond_oro = 2 * S / |dot|        # ORO 2005 convention; use for target/benchmark axes
+cond_sum =     S / |dot|        # sum-of-absolute-products convention
+S = sum_i |x_i*y_i|
+```
+
+For a nonzero exact dot, `cond_sum >= 1` and `cond_oro >= 2`. A finite `target_cond < 2` is invalid
+under the ORO convention. If exact `dot == 0` and `S > 0`, record
+`cond_oro = cond_sum = +inf`; that is a valid adversarial case but is excluded from finite log-scale
+target matching.
+
+Each generated case records:
+
+```text
+target_cond, measured_cond_mpfr (= cond_oro from the oracle), measured cond_sum,
+seed, scale, permutation, tier, status
+```
+
+The measured condition uses the §10.2 MPFR oracle interval and an upward high-precision pass for `S`,
+not a bare W-bit mpfr evaluation. A targeted finite generator must either satisfy:
+
+```text
+|log10(measured_cond_mpfr) - log10(target_cond)| <= 0.25 decades
+```
+
+or report `unachievable` for that tier, length, exponent range, and target.
+
+Generator tests must check the theoretical scaling variables, not a crude `cond ~ 1/u` threshold:
+
+```text
+naive dot scale:  about gamma_n * cond_sum, equivalently 0.5 * gamma_n * cond_oro
+Dot2/Rdot scale: about u + 0.5 * gamma_n^2 * cond_oro
+```
+
+Across seeds, target conditions, deterministic families, and ordering variants, `vRdot` must always
+enclose the oracle interval. `Rdot` may be inaccurate for high conditions; verified inclusion must not
+fail.
 
 ### 11.5 Cross-tier consistency
 

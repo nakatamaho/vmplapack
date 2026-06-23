@@ -129,8 +129,11 @@ with `VMPLAPACK_ENABLE_MPFR`).
 2. Implement only that milestone's scope.
 3. Add tests; **each test comment states the failure it is designed to catch.** Verified tests
    assert **inclusion of the oracle interval `[ref_lo, ref_hi]`**, not closeness to a point.
-4. Run the milestone's acceptance commands; all green before proceeding.
-5. Open **one PR** for the milestone.
+4. Update `ROUTINES.md` for the milestone: document every product-level public routine added or changed,
+   plus the important helper/subordinate routines that make the public routine work. Cover purpose,
+   signatures, status behavior, runtime/oracle requirements, and how users should interpret results.
+5. Run the milestone's acceptance commands; all green before proceeding.
+6. Open **one PR** for the milestone.
 
 If a milestone's acceptance cannot be met without violating a golden rule, **stop and report the
 exact conflict** rather than weakening the rule.

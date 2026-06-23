@@ -254,6 +254,16 @@ if(VMPLAPACK_ENABLE_TESTS)
             add_test(NAME test_Rdot_apriori_mpfr_w512 COMMAND test_Rdot_apriori)
             set_tests_properties(test_Rdot_apriori_mpfr_w512
                 PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+
+            add_executable(test_Rgendot_m8 tests/test_Rgendot_m8.cpp)
+            target_link_libraries(test_Rgendot_m8 PRIVATE vmplapack::vmplapack)
+            add_test(NAME test_Rgendot_m8_native COMMAND test_Rgendot_m8)
+            add_test(NAME test_Rgendot_m8_mpfr_w53 COMMAND test_Rgendot_m8)
+            set_tests_properties(test_Rgendot_m8_mpfr_w53
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")
+            add_test(NAME test_Rgendot_m8_mpfr_w512 COMMAND test_Rgendot_m8)
+            set_tests_properties(test_Rgendot_m8_mpfr_w512
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
         endif()
     endif()
 endif()
