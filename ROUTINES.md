@@ -362,8 +362,10 @@ A successful finite target is accepted in log scale:
 abs(log10(measured_cond_oro) - log10(target_cond_oro)) <= 0.25
 ```
 
-If the target is below 2, the status is `invalid_target`. If the required scale is outside the tier's
-safe exponent construction range, the status is `unachievable`.
+Tests and diagnostics can run this generator for several target condition powers per tier, such as low,
+medium, and high finite targets, and compare each generated case with `vRdot` and `vRdot_apriori`. If
+the target is below 2, the status is `invalid_target`. If the required scale is outside the tier's safe
+exponent construction range, the status is `unachievable`.
 
 ### Deterministic Adversarial Families
 
@@ -451,7 +453,9 @@ Rdot/Dot2:   about u + 0.5 * gamma_n^2 * cond_oro
 ```
 
 For every generated/adversarial case and every ordering, `vRdot` must enclose the MPFR oracle interval.
-`Rdot` is allowed to lose accuracy on high-condition inputs; verified inclusion is not allowed to fail.
+For every finite targeted high-condition random case across the selected target condition numbers,
+`vRdot_apriori` is also compared with the oracle interval and must enclose it with `status == ok`. `Rdot`
+is allowed to lose accuracy on high-condition inputs; verified inclusion is not allowed to fail.
 
 ## References
 

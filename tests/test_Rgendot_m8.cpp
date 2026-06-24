@@ -10,12 +10,27 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <type_traits>
 #include <vector>
 
 namespace {
+
+/*
+ * This test exercises the M8 generator layer in four steps:
+ * 1. Build seeded high-condition dot cases at several target ORO condition numbers.
+ * 2. Check the generator metadata against the MPFR oracle condition estimate.
+ * 3. Run vRdot and vRdot_apriori on the generated cases and require oracle interval inclusion.
+ * 4. Check that naive dot and Dot2/Rdot errors fit their expected gamma_n-scaled regimes.
+ *
+ * Set VMPLAPACK_TEST_VERBOSE=1 when running this executable directly to print the targeted random
+ * high-condition cases, measured condition numbers, oracle interval, and verified boxes.
+ * Optionally set VMPLAPACK_TEST_VERBOSE_LIMIT=N to print only the first N targeted cases.
+ * Optionally set VMPLAPACK_TEST_VERBOSE_TIER=float|double|mpfr to print only one tier.
+ */
 
 template <class REAL>
 void require(bool condition, const char* tier, const char* message) {
@@ -37,6 +52,162 @@ long parse_expected_mpfr_precision() {
         std::exit(EXIT_FAILURE);
     }
     return value;
+}
+
+bool verbose_enabled() {
+    const char* value = std::getenv("VMPLAPACK_TEST_VERBOSE");
+    return value != nullptr && value[0] != '\0' && value[0] != '0';
+}
+
+int verbose_case_limit() {
+    const char* value = std::getenv("VMPLAPACK_TEST_VERBOSE_LIMIT");
+    if (value == nullptr || value[0] == '\0') {
+        return -1;
+    }
+
+    char* end = nullptr;
+    long parsed = std::strtol(value, &end, 10);
+    if (end == value || *end != '\0' || parsed < 0) {
+        std::cerr << "invalid VMPLAPACK_TEST_VERBOSE_LIMIT=" << value << '\n';
+        std::exit(EXIT_FAILURE);
+    }
+    if (parsed > static_cast<long>(std::numeric_limits<int>::max())) {
+        return std::numeric_limits<int>::max();
+    }
+    return static_cast<int>(parsed);
+}
+
+const char* verbose_tier_filter() {
+    const char* value = std::getenv("VMPLAPACK_TEST_VERBOSE_TIER");
+    if (value == nullptr || value[0] == '\0') {
+        return nullptr;
+    }
+    if (std::strcmp(value, "float") != 0 && std::strcmp(value, "double") != 0 && std::strcmp(value, "mpfr") != 0) {
+        std::cerr << "invalid VMPLAPACK_TEST_VERBOSE_TIER=" << value << '\n';
+        std::exit(EXIT_FAILURE);
+    }
+    return value;
+}
+
+bool verbose_tier_matches(const char* tier) {
+    const char* filter = verbose_tier_filter();
+    return filter == nullptr || std::strcmp(filter, tier) == 0;
+}
+
+bool verbose_case_should_print(const char* tier) {
+    if (!verbose_enabled() || !verbose_tier_matches(tier)) {
+        return false;
+    }
+
+    static int printed_cases = 0;
+    int limit = verbose_case_limit();
+    if (limit >= 0 && printed_cases >= limit) {
+        return false;
+    }
+    ++printed_cases;
+    return true;
+}
+
+const char* permutation_name(vmplapack::gendot::Rpermutation permutation) {
+    switch (permutation) {
+        case vmplapack::gendot::Rpermutation::generated:
+            return "generated";
+        case vmplapack::gendot::Rpermutation::sorted:
+            return "sorted";
+        case vmplapack::gendot::Rpermutation::reversed:
+            return "reversed";
+        case vmplapack::gendot::Rpermutation::shuffled:
+            return "shuffled";
+    }
+    return "generated";
+}
+
+const char* generator_status_name(vmplapack::gendot::Rgenerator_status status) {
+    switch (status) {
+        case vmplapack::gendot::Rgenerator_status::ok:
+            return "ok";
+        case vmplapack::gendot::Rgenerator_status::invalid_target:
+            return "invalid_target";
+        case vmplapack::gendot::Rgenerator_status::unachievable:
+            return "unachievable";
+    }
+    return "unachievable";
+}
+
+const char* rstatus_name(vmplapack::Rstatus status) {
+    switch (status) {
+        case vmplapack::Rstatus::ok:
+            return "ok";
+        case vmplapack::Rstatus::unbounded:
+            return "unbounded";
+        case vmplapack::Rstatus::non_finite:
+            return "non_finite";
+        case vmplapack::Rstatus::invalid_input:
+            return "invalid_input";
+    }
+    return "invalid_input";
+}
+
+template <class REAL>
+int output_digits() {
+    return std::numeric_limits<REAL>::max_digits10;
+}
+
+template <>
+int output_digits<mpfrxx::mpfr_class>() {
+    return 60;
+}
+
+template <class REAL>
+void print_generated_case(const char* phase,
+                          int target_power2,
+                          const vmplapack::gendot::Rgenerated_dot_case<REAL>& generated,
+                          bool print_case) {
+    if (!print_case) {
+        return;
+    }
+
+    std::cout << std::setprecision(output_digits<REAL>());
+    std::cout << '\n' << phase << '\n';
+    std::cout << "  tier = " << generated.tier << '\n';
+    if (target_power2 >= 0) {
+        std::cout << "  target cond_oro = 2^" << target_power2 << '\n';
+    }
+    std::cout << "  generator status = " << generator_status_name(generated.status) << '\n';
+    std::cout << "  seed = " << generated.seed << '\n';
+    std::cout << "  scale = " << generated.scale << '\n';
+    std::cout << "  permutation = " << permutation_name(generated.permutation) << '\n';
+    std::cout << "  n = " << generated.data.x.size() << '\n';
+    std::cout << "  exact = " << generated.data.exact << '\n';
+    std::cout << "  target_cond_oro = " << generated.target_cond_oro << '\n';
+    std::cout << "  measured_cond_oro = " << generated.measured_cond_oro << '\n';
+    std::cout << "  measured_cond_sum = " << generated.measured_cond_sum << '\n';
+}
+
+template <class REAL>
+void print_midrad_box(const char* label, const vmplapack::Rmidrad<REAL>& box, bool print_case) {
+    if (!print_case) {
+        return;
+    }
+
+    std::cout << std::setprecision(output_digits<REAL>());
+    std::cout << "  " << label << '\n';
+    std::cout << "    mid = " << box.mid << '\n';
+    std::cout << "    rad = " << box.rad << '\n';
+    std::cout << "    status = " << rstatus_name(box.status) << '\n';
+}
+
+void print_oracle_interval(const vmplapack::oracle::Rdot_interval& ref, bool print_case) {
+    if (!print_case) {
+        return;
+    }
+
+    std::cout << std::setprecision(60);
+    std::cout << "  oracle interval" << '\n';
+    std::cout << "    lo = " << ref.lo << '\n';
+    std::cout << "    hi = " << ref.hi << '\n';
+    std::cout << "    precision = " << ref.precision << '\n';
+    std::cout << "    refinements = " << ref.refinements << '\n';
 }
 
 template <class REAL>
@@ -157,6 +328,7 @@ mpfrxx::mpfr_class relative_error(const REAL& got,
 template <class REAL>
 void require_condition_metadata(const vmplapack::gendot::Rgenerated_dot_case<REAL>& generated,
                                 const char* tier) {
+    // Phase 1: verify generator metadata before any kernel is tested.
     // Catches the factor-of-two mismatch between ORO cond=2*S/|dot| and the sum convention S/|dot|.
     require<REAL>(generated.status == vmplapack::gendot::Rgenerator_status::ok,
                   tier,
@@ -173,7 +345,8 @@ void require_condition_metadata(const vmplapack::gendot::Rgenerated_dot_case<REA
 }
 
 template <class REAL>
-void require_verified_inclusion(const vmplapack::gendot::Rdot_case<REAL>& c, const char* tier) {
+void require_verified_inclusion(const vmplapack::gendot::Rdot_case<REAL>& c, const char* tier, bool print_case) {
+    // Phase 2: use the generated data as a verified-dot regression case.
     // Catches a generated ordering that breaks directed-rounding verified inclusion.
     vmplapack::Rmidrad<REAL> box = vmplapack::vRdot(static_cast<std::ptrdiff_t>(c.x.size()),
                                                    c.x.data(),
@@ -185,13 +358,33 @@ void require_verified_inclusion(const vmplapack::gendot::Rdot_case<REAL>& c, con
                                                                          1,
                                                                          c.y.data(),
                                                                          1);
+    print_oracle_interval(ref, print_case);
+    print_midrad_box("vRdot", box, print_case);
     require<REAL>(box.status == vmplapack::Rstatus::ok, tier, "vRdot generated case returned non-ok");
     require<REAL>(midrad_covers_oracle(box, ref), tier, "vRdot did not cover generated oracle interval");
 }
 
 template <class REAL>
+void require_apriori_inclusion(const vmplapack::gendot::Rdot_case<REAL>& c, const char* tier, bool print_case) {
+    // Phase 3: reuse the same generated data against the M7 a-priori certificate.
+    // Catches M8-generated high-condition cases where the M7 a-priori certificate misses the oracle interval.
+    std::ptrdiff_t n = static_cast<std::ptrdiff_t>(c.x.size());
+    vmplapack::Rmidrad<REAL> box = vmplapack::vRdot_apriori(n, c.x.data(), 1, c.y.data(), 1);
+    vmplapack::oracle::Rdot_interval ref = vmplapack::oracle::Rdot_oracle(n, c.x.data(), 1, c.y.data(), 1);
+    print_midrad_box("vRdot_apriori", box, print_case);
+    require<REAL>(box.status == vmplapack::Rstatus::ok, tier, "vRdot_apriori generated case returned non-ok");
+    require<REAL>(box.mid == vmplapack::Rdot(n, c.x.data(), 1, c.y.data(), 1),
+                  tier,
+                  "vRdot_apriori generated case midpoint is not Rdot");
+    require<REAL>(midrad_covers_oracle(box, ref),
+                  tier,
+                  "vRdot_apriori did not cover generated oracle interval");
+}
+
+template <class REAL>
 void require_error_scaling(const vmplapack::gendot::Rgenerated_dot_case<REAL>& generated,
                            const char* tier) {
+    // Phase 4: check that the generated condition number drives the expected error scale.
     // Catches tests that use the old cond~1/u threshold instead of the gamma_n-scaled error shapes.
     const vmplapack::gendot::Rdot_case<REAL>& c = generated.data;
     std::ptrdiff_t n = static_cast<std::ptrdiff_t>(c.x.size());
@@ -245,7 +438,10 @@ void require_zero_dot_infinite_condition(const char* tier, int scale) {
 }
 
 template <class REAL>
-void test_targeted_random_cases(const char* tier, int target_power2, long mpfr_precision) {
+void test_targeted_random_cases(const char* tier,
+                                const int* target_powers,
+                                std::size_t target_count,
+                                long mpfr_precision) {
     const std::uint64_t seeds[] = {11U, 29U, 97U};
     const vmplapack::gendot::Rpermutation permutations[] = {
         vmplapack::gendot::Rpermutation::generated,
@@ -253,16 +449,22 @@ void test_targeted_random_cases(const char* tier, int target_power2, long mpfr_p
         vmplapack::gendot::Rpermutation::reversed,
         vmplapack::gendot::Rpermutation::shuffled};
 
-    for (std::size_t i = 0; i < 3U; ++i) {
-        for (std::size_t j = 0; j < 4U; ++j) {
-            vmplapack::gendot::Rgenerated_dot_case<REAL> generated =
-                vmplapack::gendot::randomized_high_condition_power2<REAL>(target_power2,
-                                                                          seeds[i],
-                                                                          permutations[j]);
-            require_condition_metadata(generated, tier);
-            require_mpfr_case_precision(generated.data, mpfr_precision);
-            require_verified_inclusion(generated.data, tier);
-            require_error_scaling(generated, tier);
+    for (std::size_t target_index = 0; target_index < target_count; ++target_index) {
+        int target_power2 = target_powers[target_index];
+        for (std::size_t i = 0; i < 3U; ++i) {
+            for (std::size_t j = 0; j < 4U; ++j) {
+                vmplapack::gendot::Rgenerated_dot_case<REAL> generated =
+                    vmplapack::gendot::randomized_high_condition_power2<REAL>(target_power2,
+                                                                              seeds[i],
+                                                                              permutations[j]);
+                bool print_case = verbose_case_should_print(tier);
+                print_generated_case("targeted random high-condition dot", target_power2, generated, print_case);
+                require_condition_metadata(generated, tier);
+                require_mpfr_case_precision(generated.data, mpfr_precision);
+                require_verified_inclusion(generated.data, tier, print_case);
+                require_apriori_inclusion(generated.data, tier, print_case);
+                require_error_scaling(generated, tier);
+            }
         }
     }
 }
@@ -288,9 +490,9 @@ void test_adversarial_families(const char* tier, int scale, int small_exponent, 
         require_mpfr_case_precision(heavy.data, mpfr_precision);
         require_mpfr_case_precision(alternating.data, mpfr_precision);
         require_mpfr_case_precision(huge_small.data, mpfr_precision);
-        require_verified_inclusion(heavy.data, tier);
-        require_verified_inclusion(alternating.data, tier);
-        require_verified_inclusion(huge_small.data, tier);
+        require_verified_inclusion(heavy.data, tier, false);
+        require_verified_inclusion(alternating.data, tier, false);
+        require_verified_inclusion(huge_small.data, tier, false);
     }
 }
 
@@ -318,11 +520,12 @@ void test_invalid_and_unachievable(const char* tier) {
 
 template <class REAL>
 void test_tier(const char* tier,
-               int target_power2,
+               const int* target_powers,
+               std::size_t target_count,
                int scale,
                int small_exponent,
                long mpfr_precision) {
-    test_targeted_random_cases<REAL>(tier, target_power2, mpfr_precision);
+    test_targeted_random_cases<REAL>(tier, target_powers, target_count, mpfr_precision);
     test_adversarial_families<REAL>(tier, scale, small_exponent, mpfr_precision);
     require_zero_dot_infinite_condition<REAL>(tier, scale);
     test_invalid_and_unachievable<REAL>(tier);
@@ -336,13 +539,17 @@ int main() {
         mpfrxx::set_default_precision_bits(static_cast<mpfr_prec_t>(expected_mpfr_precision));
     }
 
-    test_tier<float>("float", 30, 30, -10, 0);
-    test_tier<double>("double", 60, 60, -20, 0);
+    // Each tier gets low, medium, and high finite ORO-condition targets.
+    const int float_targets[] = {10, 20, 30};
+    const int double_targets[] = {20, 40, 60};
+    test_tier<float>("float", float_targets, 3, 30, -10, 0);
+    test_tier<double>("double", double_targets, 3, 60, -20, 0);
 
     if (expected_mpfr_precision == 53) {
-        test_tier<mpfrxx::mpfr_class>("mpfr", 60, 60, -20, expected_mpfr_precision);
+        test_tier<mpfrxx::mpfr_class>("mpfr", double_targets, 3, 60, -20, expected_mpfr_precision);
     } else if (expected_mpfr_precision == 512) {
-        test_tier<mpfrxx::mpfr_class>("mpfr", 700, 700, -80, expected_mpfr_precision);
+        const int mpfr_w512_targets[] = {128, 384, 700};
+        test_tier<mpfrxx::mpfr_class>("mpfr", mpfr_w512_targets, 3, 700, -80, expected_mpfr_precision);
     } else if (expected_mpfr_precision != 0) {
         std::cerr << "unsupported MPFRXX_DEFAULT_PRECISION_BITS=" << expected_mpfr_precision << '\n';
         return EXIT_FAILURE;

@@ -685,7 +685,9 @@ not a bare W-bit mpfr evaluation. A targeted finite generator must either satisf
 |log10(measured_cond_mpfr) - log10(target_cond)| <= 0.25 decades
 ```
 
-or report `unachievable` for that tier, length, exponent range, and target.
+or report `unachievable` for that tier, length, exponent range, and target. Tests should use several
+finite target conditions per tier, spanning low, medium, and high condition regimes, so oracle comparison
+is not tied to a single hand-picked condition number.
 
 Generator tests must check the theoretical scaling variables, not a crude `cond ~ 1/u` threshold:
 
@@ -694,9 +696,10 @@ naive dot scale:  about gamma_n * cond_sum, equivalently 0.5 * gamma_n * cond_or
 Dot2/Rdot scale: about u + 0.5 * gamma_n^2 * cond_oro
 ```
 
-Across seeds, target conditions, deterministic families, and ordering variants, `vRdot` must always
-enclose the oracle interval. `Rdot` may be inaccurate for high conditions; verified inclusion must not
-fail.
+Across seeds, multiple target conditions, deterministic families, and ordering variants, `vRdot` must
+always enclose the oracle interval. For every finite targeted high-condition random case,
+`vRdot_apriori` must also be compared with the oracle interval and enclose it with `status == ok`.
+`Rdot` may be inaccurate for high conditions; verified inclusion must not fail.
 
 ### 11.5 Cross-tier consistency
 

@@ -300,7 +300,8 @@ term sum, not from a bare W-bit mpfr dot. Acceptance is log-scale:
 |log10(measured_cond_mpfr) - log10(target_cond)| <= 0.25 decades
 ```
 
-or the generator reports `unachievable` for that tier/length/exponent range/target.
+or the generator reports `unachievable` for that tier/length/exponent range/target. Exercise several
+finite target conditions per tier rather than one hand-picked condition number.
 
 **Exact-construction rule.** Native powers use in-range `std::ldexp` in the target type. MPFR powers use
 `mpfr_set_ui_2exp` at the current fixed `W`. Never construct generator input values through `double`.
@@ -312,8 +313,10 @@ naive dot scale:  gamma_n * cond_sum = 0.5 * gamma_n * cond_oro
 Dot2/Rdot scale:  u + 0.5 * gamma_n^2 * cond_oro
 ```
 
-Across all seeds, conditions, deterministic families, and orderings, `vRdot` must enclose the oracle
-interval. `Rdot` may lose accuracy; verified inclusion must not fail.
+Across all seeds, multiple target conditions, deterministic families, and orderings, `vRdot` must
+enclose the oracle interval. For every finite targeted high-condition random case, compare
+`vRdot_apriori` with the same oracle interval and require inclusion with `status == ok`. `Rdot` may lose
+accuracy; verified inclusion must not fail.
 
 **Anti-patterns.**
 - ❌ Reporting only one unnamed `cond` value — the factor-of-two convention matters.
