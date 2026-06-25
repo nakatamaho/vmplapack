@@ -15,6 +15,8 @@ option(VMPLAPACK_ENABLE_SANITIZERS "Build with ASan and UBSan instrumentation." 
 option(VMPLAPACK_ENABLE_FAST_MATH_GUARD_TEST "Verify that -ffast-math is rejected by the umbrella header." ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 include(RoundingControl)
 include(CheckCXXSourceCompiles)
 
@@ -27,6 +29,7 @@ add_library(vmplapack
     src/vRresidual.cpp
     src/vRsum.cpp)
 add_library(vmplapack::vmplapack ALIAS vmplapack)
+set_target_properties(vmplapack PROPERTIES EXPORT_NAME vmplapack)
 
 target_compile_features(vmplapack PUBLIC cxx_std_17)
 target_include_directories(vmplapack
@@ -161,14 +164,34 @@ if(VMPLAPACK_ENABLE_MPFR)
         message(FATAL_ERROR "M2 MPFR API probe failed: missing MPFR headers or library")
     endif()
 
+    if(NOT TARGET GMP::GMP)
+        add_library(GMP::GMP UNKNOWN IMPORTED)
+        set_target_properties(GMP::GMP
+            PROPERTIES
+                IMPORTED_LOCATION "${GMP_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${GMP_INCLUDE_DIR}")
+    endif()
+    if(NOT TARGET MPFR::MPFR)
+        add_library(MPFR::MPFR UNKNOWN IMPORTED)
+        set_target_properties(MPFR::MPFR
+            PROPERTIES
+                IMPORTED_LOCATION "${MPFR_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${MPFR_INCLUDE_DIR}"
+                INTERFACE_LINK_LIBRARIES GMP::GMP)
+    endif()
+
     add_library(vmplapack_mpfr_deps INTERFACE)
     add_library(vmplapack::mpfr_deps ALIAS vmplapack_mpfr_deps)
+    set_target_properties(vmplapack_mpfr_deps PROPERTIES EXPORT_NAME mpfr_deps)
     target_include_directories(vmplapack_mpfr_deps
         INTERFACE
-            "${GMPFRXX_MKII_INCLUDE_DIR}"
-            "${GMP_INCLUDE_DIR}"
-            "${MPFR_INCLUDE_DIR}")
-    target_link_libraries(vmplapack_mpfr_deps INTERFACE "${MPFR_LIBRARY}" "${GMP_LIBRARY}")
+            "$<BUILD_INTERFACE:${GMPFRXX_MKII_INCLUDE_DIR}>"
+            "$<BUILD_INTERFACE:${GMP_INCLUDE_DIR}>"
+            "$<BUILD_INTERFACE:${MPFR_INCLUDE_DIR}>")
+    target_link_libraries(vmplapack_mpfr_deps
+        INTERFACE
+            "$<BUILD_INTERFACE:MPFR::MPFR>"
+            "$<BUILD_INTERFACE:GMP::GMP>")
 
     target_compile_definitions(vmplapack PUBLIC VMPLAPACK_ENABLE_MPFR)
     target_link_libraries(vmplapack PUBLIC vmplapack::mpfr_deps)
@@ -358,3 +381,43 @@ if(VMPLAPACK_ENABLE_EXAMPLES)
         target_link_libraries(example_m7_apriori_bound PRIVATE vmplapack::vmplapack)
     endif()
 endif()
+
+set(VMPLAPACK_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/vmplapack")
+
+set(_vmplapack_install_targets vmplapack vmplapack_rounding_control)
+if(VMPLAPACK_ENABLE_MPFR)
+    list(APPEND _vmplapack_install_targets vmplapack_mpfr_deps)
+endif()
+
+install(TARGETS ${_vmplapack_install_targets}
+    EXPORT vmplapackTargets
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
+install(DIRECTORY include/
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
+install(EXPORT vmplapackTargets
+    NAMESPACE vmplapack::
+    DESTINATION "${VMPLAPACK_INSTALL_CMAKEDIR}")
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/vmplapackConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/vmplapackConfig.cmake"
+    INSTALL_DESTINATION "${VMPLAPACK_INSTALL_CMAKEDIR}")
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/vmplapackConfigVersion.cmake"
+    VERSION "${PROJECT_VERSION}"
+    COMPATIBILITY ExactVersion)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/vmplapackConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/vmplapackConfigVersion.cmake"
+    DESTINATION "${VMPLAPACK_INSTALL_CMAKEDIR}")
+
+install(FILES
+    cmake/FindGMP.cmake
+    cmake/FindMPFR.cmake
+    DESTINATION "${VMPLAPACK_INSTALL_CMAKEDIR}/modules")

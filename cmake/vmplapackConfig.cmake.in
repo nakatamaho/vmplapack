@@ -1,0 +1,40 @@
+# Copyright (c) 2026, NAKATA Maho
+# SPDX-License-Identifier: BSD-2-Clause
+
+@PACKAGE_INIT@
+
+set(VMPLAPACK_BUILT_WITH_MPFR "@VMPLAPACK_ENABLE_MPFR@")
+
+include(CMakeFindDependencyMacro)
+
+if(VMPLAPACK_BUILT_WITH_MPFR)
+    set(_vmplapack_saved_module_path "${CMAKE_MODULE_PATH}")
+    list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/modules")
+    find_dependency(GMP)
+    find_dependency(MPFR)
+    set(CMAKE_MODULE_PATH "${_vmplapack_saved_module_path}")
+
+    if(DEFINED GMPFRXX_MKII_INCLUDE_DIR)
+        set(VMPLAPACK_GMPFRXX_MKII_INCLUDE_DIR "${GMPFRXX_MKII_INCLUDE_DIR}")
+    elseif(DEFINED ENV{GMPFRXX_MKII_INCLUDE_DIR})
+        set(VMPLAPACK_GMPFRXX_MKII_INCLUDE_DIR "$ENV{GMPFRXX_MKII_INCLUDE_DIR}")
+    else()
+        set(VMPLAPACK_GMPFRXX_MKII_INCLUDE_DIR "@GMPFRXX_MKII_INCLUDE_DIR@")
+    endif()
+
+    if(NOT EXISTS "${VMPLAPACK_GMPFRXX_MKII_INCLUDE_DIR}/mpfrxx_mkII.h"
+            AND NOT EXISTS "${VMPLAPACK_GMPFRXX_MKII_INCLUDE_DIR}/gmpfrxx_mkII.h")
+        message(FATAL_ERROR "vMPLAPACK was built with MPFR support, but gmpfrxx_mkII headers were not found. Set GMPFRXX_MKII_INCLUDE_DIR.")
+    endif()
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/vmplapackTargets.cmake")
+
+if(VMPLAPACK_BUILT_WITH_MPFR AND TARGET vmplapack::mpfr_deps)
+    set_property(TARGET vmplapack::mpfr_deps APPEND
+        PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${VMPLAPACK_GMPFRXX_MKII_INCLUDE_DIR}")
+    set_property(TARGET vmplapack::mpfr_deps APPEND
+        PROPERTY INTERFACE_LINK_LIBRARIES MPFR::MPFR GMP::GMP)
+endif()
+
+check_required_components(vmplapack)

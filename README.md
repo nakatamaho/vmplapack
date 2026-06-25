@@ -147,6 +147,26 @@ If gmpfrxx_mkII is not in the default probe location, pass:
 -DGMPFRXX_MKII_INCLUDE_DIR=/path/to/gmpfrxx_mkII/include
 ```
 
+## Install and Consume
+
+M10 installs an exported CMake package. Native-only installs do not require GMP/MPFR at consumer
+configure time; MPFR-enabled installs call `find_dependency(GMP)` and `find_dependency(MPFR)` and need
+gmpfrxx_mkII headers available through `GMPFRXX_MKII_INCLUDE_DIR` if the build-time path is not valid.
+
+```bash
+cmake --install build --prefix build/install
+cmake -S tests/consumer -B build/consumer \
+  -DCMAKE_PREFIX_PATH=$PWD/build/install \
+  -DGMPFRXX_MKII_INCLUDE_DIR=/path/to/gmpfrxx_mkII/include \
+  -DVMPLAPACK_CONSUMER_EXPECT_MPFR=ON
+cmake --build build/consumer -j
+ctest --test-dir build/consumer --output-on-failure
+```
+
+The consumer smoke project also checks `compile_commands.json` to verify that the strict FP flags are
+inherited through `vmplapack::vmplapack`. A consumer that adds `-ffast-math` is rejected by the umbrella
+header guard.
+
 ## Examples
 
 Examples are built when `VMPLAPACK_ENABLE_EXAMPLES=ON`. Tier-complete examples exercise `float`, `double`, and `mpfrxx::mpfr_class` at `W=512`.

@@ -73,6 +73,25 @@ MPFR rounding scope and representative EFT invariants.
 These checks are not part of the library API, but they protect the assumptions used by `vRsum`,
 `vRdot`, `vRdot_apriori`, and `vRresidual`.
 
+## M10 Package Consumption Support
+
+M10 does not add a numerical routine. It makes the existing routines consumable through an installed
+CMake package:
+
+```text
+installed target        vmplapack::vmplapack
+package config          vmplapackConfig.cmake
+version policy          ExactVersion for 0.x releases
+native-only package     no GMP/MPFR dependency lookup in find_package(vmplapack)
+MPFR package            find_dependency(GMP) and find_dependency(MPFR), plus gmpfrxx_mkII headers
+consumer smoke          tests/consumer builds and runs a verified-dot example
+```
+
+The installed `vmplapack::vmplapack` target carries the same strict FP usage requirements as the build
+tree target. The consumer smoke project verifies this by inspecting `compile_commands.json`; it is not
+assumed from successful compilation alone. The umbrella header remains the final defense against a
+consumer overriding usage requirements with `-ffast-math`.
+
 ## `vRdot`
 
 Signature:
