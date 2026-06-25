@@ -53,6 +53,26 @@ finite inputs containing NaN or Inf   non_finite
 Accurate routines such as `Rdot` have a lighter BLAS-style precondition contract; the explicit status
 classification above is for verified routines.
 
+## M9 Contract Validation Support
+
+M9 does not add a new public numerical routine. It hardens the environment around the existing routines:
+
+```text
+configure-time guard   -ffast-math try_compile must fail through the umbrella __FAST_MATH__ #error
+runtime sanity test    test_runtime_contract_m9
+sanitizer build        VMPLAPACK_ENABLE_SANITIZERS=ON adds ASan+UBSan flags
+CI matrix              native-only and MPFR-on, gcc and clang, Release and Debug
+```
+
+`test_runtime_contract_m9` is intentionally separate from the M0 environment smoke test. It checks the
+ordinary accepted-flags build for runtime-directed rounding with constant folding blocked, x86 FTZ/DAZ
+where MXCSR is available, and EFT invariants over normal, subnormal, cancellation, large/small-scale,
+and signed-zero cases. MPFR-enabled builds run the same executable again at W=53 and W=512 to check the
+MPFR rounding scope and representative EFT invariants.
+
+These checks are not part of the library API, but they protect the assumptions used by `vRsum`,
+`vRdot`, `vRdot_apriori`, and `vRresidual`.
+
 ## `vRdot`
 
 Signature:

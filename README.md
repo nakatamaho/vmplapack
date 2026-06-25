@@ -123,6 +123,18 @@ cmake --build build-native -j
 ctest --test-dir build-native --output-on-failure
 ```
 
+M9 contract and sanitizer checks:
+
+```bash
+# The default configure runs a try_compile that must reject -ffast-math via the umbrella header.
+cmake -S . -B build -DVMPLAPACK_ENABLE_FAST_MATH_GUARD_TEST=ON
+
+# Debug ASan+UBSan build.
+cmake -S . -B build-sanitize -DVMPLAPACK_ENABLE_SANITIZERS=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-sanitize -j
+ASAN_OPTIONS=detect_leaks=0 ctest --test-dir build-sanitize --output-on-failure
+```
+
 Optional Dekker TwoProduct path:
 
 ```bash

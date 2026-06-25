@@ -1,0 +1,102 @@
+# Copyright (c) 2026, NAKATA Maho
+# SPDX-License-Identifier: BSD-2-Clause
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    name: ${{ matrix.compiler.id }} ${{ matrix.build_type }} mpfr=${{ matrix.mpfr }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { id: gcc, cc: gcc, cxx: g++ }
+          - { id: clang, cc: clang, cxx: clang++ }
+        build_type: [Release, Debug]
+        mpfr: [OFF, ON]
+
+    steps:
+      - name: Checkout vMPLAPACK
+        uses: actions/checkout@v4
+
+      - name: Checkout gmpfrxx_mkII
+        if: matrix.mpfr == 'ON'
+        uses: actions/checkout@v4
+        with:
+          repository: nakatamaho/gmpfrxx_mkII
+          path: gmpfrxx_mkII
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gcc g++ clang libgmp-dev libmpfr-dev libmpc-dev
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.compiler.cc }}
+          CXX: ${{ matrix.compiler.cxx }}
+        run: >
+          cmake -S . -B build -G Ninja
+          -DVMPLAPACK_ENABLE_MPFR=${{ matrix.mpfr }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DGMPFRXX_MKII_INCLUDE_DIR=${{ github.workspace }}/gmpfrxx_mkII/include
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  sanitizers:
+    name: sanitizers ${{ matrix.compiler.id }} mpfr=${{ matrix.mpfr }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { id: gcc, cc: gcc, cxx: g++ }
+          - { id: clang, cc: clang, cxx: clang++ }
+        mpfr: [OFF, ON]
+
+    steps:
+      - name: Checkout vMPLAPACK
+        uses: actions/checkout@v4
+
+      - name: Checkout gmpfrxx_mkII
+        if: matrix.mpfr == 'ON'
+        uses: actions/checkout@v4
+        with:
+          repository: nakatamaho/gmpfrxx_mkII
+          path: gmpfrxx_mkII
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gcc g++ clang libgmp-dev libmpfr-dev libmpc-dev
+
+      - name: Configure ASan+UBSan
+        env:
+          CC: ${{ matrix.compiler.cc }}
+          CXX: ${{ matrix.compiler.cxx }}
+        run: >
+          cmake -S . -B build-sanitize -G Ninja
+          -DVMPLAPACK_ENABLE_MPFR=${{ matrix.mpfr }}
+          -DVMPLAPACK_ENABLE_SANITIZERS=ON
+          -DCMAKE_BUILD_TYPE=Debug
+          -DGMPFRXX_MKII_INCLUDE_DIR=${{ github.workspace }}/gmpfrxx_mkII/include
+
+      - name: Build ASan+UBSan
+        run: cmake --build build-sanitize -j
+
+      - name: Test ASan+UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ctest --test-dir build-sanitize --output-on-failure

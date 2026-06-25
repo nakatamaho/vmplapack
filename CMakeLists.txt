@@ -11,6 +11,8 @@ option(VMPLAPACK_ENABLE_MPFR "Enable the MPFR tier." ON)
 option(VMPLAPACK_ENABLE_TESTS "Build vMPLAPACK tests." ON)
 option(VMPLAPACK_ENABLE_EXAMPLES "Build vMPLAPACK examples." ON)
 option(VMPLAPACK_USE_DEKKER_TWOPRODUCT "Use Dekker TwoProduct instead of FMA." OFF)
+option(VMPLAPACK_ENABLE_SANITIZERS "Build with ASan and UBSan instrumentation." OFF)
+option(VMPLAPACK_ENABLE_FAST_MATH_GUARD_TEST "Verify that -ffast-math is rejected by the umbrella header." ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(RoundingControl)
@@ -32,6 +34,50 @@ target_include_directories(vmplapack
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>)
 target_link_libraries(vmplapack PUBLIC vmplapack::rounding_control)
+
+if(VMPLAPACK_ENABLE_SANITIZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+        message(FATAL_ERROR "VMPLAPACK_ENABLE_SANITIZERS requires GCC or Clang style sanitizer flags")
+    endif()
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+        message(WARNING "VMPLAPACK_ENABLE_SANITIZERS is intended for Debug builds")
+    endif()
+
+    add_library(vmplapack_sanitizers INTERFACE)
+    add_library(vmplapack::sanitizers ALIAS vmplapack_sanitizers)
+    target_compile_options(vmplapack_sanitizers
+        INTERFACE
+            -fsanitize=address,undefined
+            -fno-omit-frame-pointer)
+    target_link_options(vmplapack_sanitizers
+        INTERFACE
+            -fsanitize=address,undefined)
+    target_link_libraries(vmplapack PUBLIC vmplapack::sanitizers)
+endif()
+
+if(VMPLAPACK_ENABLE_FAST_MATH_GUARD_TEST AND NOT MSVC)
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fast_math_guard")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/fast_math_guard/fast_math_reject.cpp" [[
+#include <vmplapack/vmplapack.h>
+int main() { return 0; }
+]])
+    try_compile(VMPLAPACK_FAST_MATH_COMPILED
+        "${CMAKE_CURRENT_BINARY_DIR}/fast_math_guard/build"
+        "${CMAKE_CURRENT_BINARY_DIR}/fast_math_guard/fast_math_reject.cpp"
+        CMAKE_FLAGS
+            "-DCMAKE_CXX_STANDARD:STRING=17"
+            "-DCMAKE_CXX_STANDARD_REQUIRED:BOOL=ON"
+        COMPILE_DEFINITIONS
+            -ffast-math
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
+        OUTPUT_VARIABLE VMPLAPACK_FAST_MATH_OUTPUT)
+    if(VMPLAPACK_FAST_MATH_COMPILED)
+        message(FATAL_ERROR "-ffast-math was not rejected by include/vmplapack/vmplapack.h")
+    endif()
+    if(NOT VMPLAPACK_FAST_MATH_OUTPUT MATCHES "vMPLAPACK requires IEEE-754 semantics")
+        message(FATAL_ERROR "-ffast-math compile failed, but not through the vMPLAPACK __FAST_MATH__ guard")
+    endif()
+endif()
 
 if(VMPLAPACK_ENABLE_MPFR)
     set(GMPFRXX_MKII_INCLUDE_DIR "" CACHE PATH "Path to the gmpfrxx_mkII include directory")
@@ -210,10 +256,21 @@ if(VMPLAPACK_ENABLE_TESTS)
         target_link_libraries(test_Rarith_environment PRIVATE vmplapack::vmplapack)
         add_test(NAME test_Rarith_environment COMMAND test_Rarith_environment)
 
+        add_executable(test_runtime_contract_m9 tests/test_runtime_contract_m9.cpp)
+        target_link_libraries(test_runtime_contract_m9 PRIVATE vmplapack::vmplapack)
+        add_test(NAME test_runtime_contract_m9 COMMAND test_runtime_contract_m9)
+
         add_executable(test_Rarith_eft tests/test_Rarith_eft.cpp)
         target_link_libraries(test_Rarith_eft PRIVATE vmplapack::vmplapack)
         add_test(NAME test_Rarith_eft COMMAND test_Rarith_eft)
         if(VMPLAPACK_ENABLE_MPFR)
+            add_test(NAME test_runtime_contract_m9_mpfr_w53 COMMAND test_runtime_contract_m9)
+            set_tests_properties(test_runtime_contract_m9_mpfr_w53
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")
+            add_test(NAME test_runtime_contract_m9_mpfr_w512 COMMAND test_runtime_contract_m9)
+            set_tests_properties(test_runtime_contract_m9_mpfr_w512
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+
             add_test(NAME test_Rarith_eft_mpfr_w53 COMMAND test_Rarith_eft)
             set_tests_properties(test_Rarith_eft_mpfr_w53
                 PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")

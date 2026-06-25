@@ -725,10 +725,12 @@ are skipped; the crafted-constant tests still run.
 Options:
 
 ```text
-VMPLAPACK_ENABLE_MPFR            (default ON)    # mpfr tier in the library AND MPFR oracle in tests
-VMPLAPACK_ENABLE_TESTS          (default ON)
-VMPLAPACK_ENABLE_EXAMPLES       (default ON)
-VMPLAPACK_USE_DEKKER_TWOPRODUCT (default OFF)
+VMPLAPACK_ENABLE_MPFR                 (default ON)    # mpfr tier in the library AND MPFR oracle in tests
+VMPLAPACK_ENABLE_TESTS               (default ON)
+VMPLAPACK_ENABLE_EXAMPLES            (default ON)
+VMPLAPACK_USE_DEKKER_TWOPRODUCT      (default OFF)
+VMPLAPACK_ENABLE_SANITIZERS          (default OFF)   # ASan+UBSan instrumentation for Debug validation
+VMPLAPACK_ENABLE_FAST_MATH_GUARD_TEST (default ON)    # try_compile must reject -ffast-math via __FAST_MATH__
 ```
 
 - `cmake/RoundingControl.cmake` defines an INTERFACE target carrying the §9.1 flags; link it into the
@@ -741,6 +743,10 @@ VMPLAPACK_USE_DEKKER_TWOPRODUCT (default OFF)
   only the environment + crafted-constant native-EFT smoke tests are built (state this explicitly).
 - C++17; `-Wall -Wextra -Werror` recommended, never relaxing the FP flags. `enable_testing()` +
   `add_test`; register the W=53 and W=512 mpfr suites as separate tests (§10.1).
+- M9 configuration must run the fast-math negative compile check by default: a `try_compile` using
+  `-ffast-math` includes the umbrella header and must fail through the `__FAST_MATH__` `#error`.
+- `VMPLAPACK_ENABLE_SANITIZERS=ON` adds ASan+UBSan instrumentation for Debug validation; it must not
+  relax the strict FP flags.
 
 `cmake -S . -B build && cmake --build build && ctest` must pass with GMP/MPFR present.
 
