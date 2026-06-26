@@ -92,6 +92,33 @@ tree target. The consumer smoke project verifies this by inspecting `compile_com
 assumed from successful compilation alone. The umbrella header remains the final defense against a
 consumer overriding usage requirements with `-ffast-math`.
 
+## M11 Examples And Benchmark Support
+
+M11 does not add a new numerical kernel. It adds product-level demonstration and measurement drivers
+around the existing public routines:
+
+```text
+example_m11_dot_driver         naive dot vs Rdot vs vRdot vs vRdot_apriori
+example_m11_residual_worked    worked row-wise vRresidual example
+benchmark_m11_core             CSV benchmark, smoke by default, full sweep opt-in
+```
+
+`example_m11_dot_driver` uses the M8 seeded high-condition generator and the MPFR oracle to display
+condition estimates, oracle midpoint, midpoint errors, verified radii, statuses, and oracle inclusion.
+The oracle is a reporting/checking tool only; the verified routines still compute their certificates
+without oracle access.
+
+`example_m11_residual_worked` constructs a two-row residual problem. One row has the cancellation shape
+`[2^k, 1, -2^k] dot [1, 1, 1]`, so the example shows why row-wise verified residual boxes are more
+meaningful than a displayed nearest-rounded residual alone.
+
+`benchmark_m11_core` emits schema version `m11.1`. The schema is intentionally frozen for reuse by
+M12+ tooling and includes timing, condition, status, enclosure, radius, compiler, platform, git, and
+rounding-backend fields. Rows for routines without enclosures use explicit `null` for `enclosed`,
+`radius`, and `relative_radius`; `unbounded` verified rows use `radius = +inf` and `enclosed = false`.
+Smoke mode is intended for CI. Full mode adds extra random condition targets and orderings for manual
+benchmark sweeps.
+
 ## `vRdot`
 
 Signature:

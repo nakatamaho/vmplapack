@@ -10,6 +10,7 @@ project(vmplapack
 option(VMPLAPACK_ENABLE_MPFR "Enable the MPFR tier." ON)
 option(VMPLAPACK_ENABLE_TESTS "Build vMPLAPACK tests." ON)
 option(VMPLAPACK_ENABLE_EXAMPLES "Build vMPLAPACK examples." ON)
+option(VMPLAPACK_ENABLE_BENCHMARKS "Build the M11 benchmark suite." ON)
 option(VMPLAPACK_USE_DEKKER_TWOPRODUCT "Use Dekker TwoProduct instead of FMA." OFF)
 option(VMPLAPACK_ENABLE_SANITIZERS "Build with ASan and UBSan instrumentation." OFF)
 option(VMPLAPACK_ENABLE_FAST_MATH_GUARD_TEST "Verify that -ffast-math is rejected by the umbrella header." ON)
@@ -19,6 +20,27 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(RoundingControl)
 include(CheckCXXSourceCompiles)
+
+set(VMPLAPACK_GIT_SHA "unknown")
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE VMPLAPACK_GIT_SHA
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+endif()
+
+set(VMPLAPACK_BENCHMARK_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
+if(VMPLAPACK_BENCHMARK_BUILD_TYPE STREQUAL "")
+    set(VMPLAPACK_BENCHMARK_BUILD_TYPE "unknown")
+endif()
+
+set(VMPLAPACK_BENCHMARK_CPU "${CMAKE_SYSTEM_PROCESSOR}")
+if(VMPLAPACK_BENCHMARK_CPU STREQUAL "")
+    set(VMPLAPACK_BENCHMARK_CPU "unknown")
+endif()
 
 add_library(vmplapack
     src/Rdot.cpp
@@ -379,6 +401,45 @@ if(VMPLAPACK_ENABLE_EXAMPLES)
 
         add_executable(example_m7_apriori_bound examples/example_m7_apriori_bound.cpp)
         target_link_libraries(example_m7_apriori_bound PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_m11_dot_driver examples/example_m11_dot_driver.cpp)
+        target_link_libraries(example_m11_dot_driver PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_m11_residual_worked examples/example_m11_residual_worked.cpp)
+        target_link_libraries(example_m11_residual_worked PRIVATE vmplapack::vmplapack)
+    endif()
+endif()
+
+if(VMPLAPACK_ENABLE_BENCHMARKS AND VMPLAPACK_ENABLE_MPFR)
+    add_executable(benchmark_m11_core benchmarks/benchmark_m11_core.cpp)
+    target_link_libraries(benchmark_m11_core PRIVATE vmplapack::vmplapack)
+    target_compile_definitions(benchmark_m11_core
+        PRIVATE
+            VMPLAPACK_BENCHMARK_COMPILER_ID="${CMAKE_CXX_COMPILER_ID}"
+            VMPLAPACK_BENCHMARK_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}"
+            VMPLAPACK_BENCHMARK_BUILD_TYPE="${VMPLAPACK_BENCHMARK_BUILD_TYPE}"
+            VMPLAPACK_BENCHMARK_FP_CONTRACT_FLAGS="strict-fp_no-fast-math_rounding-math_fp-contract-off"
+            VMPLAPACK_BENCHMARK_CPU="${VMPLAPACK_BENCHMARK_CPU}"
+            VMPLAPACK_BENCHMARK_OS="${CMAKE_SYSTEM_NAME}"
+            VMPLAPACK_BENCHMARK_GIT_SHA="${VMPLAPACK_GIT_SHA}")
+endif()
+
+if(VMPLAPACK_ENABLE_TESTS AND BUILD_TESTING AND VMPLAPACK_ENABLE_MPFR)
+    if(TARGET example_m11_dot_driver)
+        add_test(NAME example_m11_dot_driver COMMAND example_m11_dot_driver)
+        set_tests_properties(example_m11_dot_driver
+            PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+    endif()
+    if(TARGET example_m11_residual_worked)
+        add_test(NAME example_m11_residual_worked COMMAND example_m11_residual_worked)
+        set_tests_properties(example_m11_residual_worked
+            PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+    endif()
+    if(TARGET benchmark_m11_core)
+        add_test(NAME benchmark_m11_smoke COMMAND benchmark_m11_core --smoke)
+        set_tests_properties(benchmark_m11_smoke
+            PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512"
+                       LABELS "benchmark_smoke")
     endif()
 endif()
 

@@ -179,8 +179,40 @@ example_vRresidual
 example_m4_accurate_dot
 example_m4_accurate_sum
 example_m7_apriori_bound
+example_m11_dot_driver
+example_m11_residual_worked
 example_m3_oracle_generators
 ```
+
+`example_m11_dot_driver` compares naive dot, `Rdot`, `vRdot`, and `vRdot_apriori` on one seeded
+high-condition dot per tier. It prints oracle midpoint, condition estimates, errors, radii, statuses,
+and whether verified boxes enclose the oracle interval. `example_m11_residual_worked` shows a small
+`vRresidual` problem with cancellation in one row and prints the row-wise residual boxes.
+
+## Benchmarks
+
+M11 adds `benchmark_m11_core`, built when `VMPLAPACK_ENABLE_BENCHMARKS=ON` and MPFR support is enabled.
+The default CTest path runs only the light smoke benchmark:
+
+```bash
+./build/benchmark_m11_core --smoke
+./build/benchmark_m11_core --full
+```
+
+The benchmark emits CSV to stdout with frozen schema version `m11.1`:
+
+```text
+schema_version,routine,tier,precision_bits,n,generator,seed,target_cond,realized_cond_oro,
+realized_cond_sum,status,enclosed,elapsed_ns_total,time_ns_per_item,work_items,repetitions,
+statistic,mid_error_abs,mid_error_rel,radius,relative_radius,compiler_id,compiler_version,
+build_type,fp_contract_flags,cpu,os,git_sha,rounding_backend
+```
+
+Rows without an enclosure, such as naive dot and `Rdot`, use `enclosed = null`, `radius = null`, and
+`relative_radius = null`. Verified rows use `status`, `enclosed`, `radius`, and `relative_radius`;
+`unbounded` rows use `radius = +inf` and `enclosed = false`. The cases include deterministic M3 data
+and random/adversarial M8 data, so grouping by `tier`, `routine`, and `realized_cond_oro` gives
+success-rate-vs-condition and radius-vs-condition views.
 
 ## References
 
