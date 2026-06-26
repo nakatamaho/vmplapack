@@ -24,7 +24,7 @@ of bounds, NaN-vs-Inf classification, empty/invalid inputs, MPFR fixed-precision
 rounding, condition-aware testing). **These hardening rules are load-bearing for the word
 "verified" ― do not relax them.**
 
-Implement **milestone by milestone (M0 → M12a)**, one commit/PR per milestone; do **not** start a
+Implement **milestone by milestone (M0 → M12)**, one commit/PR per milestone; do **not** start a
 milestone until the previous one's acceptance tests pass. If you find a reason to deviate from the
 signatures, `Rmidrad`/`Rstatus`, the `Rarith<REAL>` interface, the preconditions (§6), the
 boundary rules (§8), or the rounding contract (§9), **stop and report** instead of silently
@@ -1069,6 +1069,20 @@ contract in `ROADMAP.md` applies) is specified separately when reached.*
   the high-precision dot oracle for cancellation-heavy matvec and matmul cases; boundary tests cover
   zero dimensions, invalid inputs, non-finite inputs, overflow-to-`unbounded`, and strided vectors.
   Native-only builds compile the float/double instantiations and keep all native tests green.
+
+- **M12b — Verified matvec/matmul fast path.** Keep the M12a public signatures and boundary rules.
+  For each component, `vRgemv_point` and `vRgemm_point` first try a nearest-rounding enclosure based
+  on `vRdot_apriori`: midpoint from compensated `Rdot`, radius from the Dot2 a-priori bound using an
+  upward absolute-product sum. If that a-priori path returns `unbounded`, fall back to the M12a
+  directed scalar `vRdot` enclosure for that component and keep whichever result has the better scalar
+  status. The certificate must not depend on an external BLAS/MPLAPACK kernel honoring directed
+  rounding. `vRgemm_midrad` remains deferred.
+
+  *Accept:* MPFR-on tests verify that a cancellation-heavy matvec/matmul component is strictly tighter
+  than the directed reference while still covering the high-precision oracle interval for `float`,
+  `double`, and MPFR W=53/W=512. Native tests verify that an overflowing a-priori absolute-product
+  bound falls back to the directed reference instead of reporting `unbounded` for an exactly cancelling
+  finite case.
 
 ---
 

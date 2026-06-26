@@ -181,10 +181,31 @@ It computes enclosures for `C[i*ldc+j] ~= sum_t A[i*lda+t] * B[t*ldb+j]`. Bounda
 `k == 0` writes exact zero boxes, and otherwise `C`, `A`, `B`, `ldc >= n`, `lda >= k`, and `ldb >= n`
 are required.
 
-M12a is the slow correctness baseline: each component delegates to the existing directed scalar
-`vRdot` path. It does not call BLAS/MPLAPACK and does not assume any external kernel honors directed
-rounding. M12b may add a faster nearest-rounding enclosure later, but the M12a reference remains the
-comparison path.
+M12a is the slow correctness baseline: each component can be certified by the existing directed
+scalar `vRdot` path. It does not call BLAS/MPLAPACK and does not assume any external kernel honors
+directed rounding.
+
+## M12b Verified Matvec/Matmul Fast Path
+
+The exported `vRgemv_point` and `vRgemm_point` signatures and boundary rules are unchanged. For each
+component, the current implementation first tries the fast scalar a-priori certificate:
+
+```text
+mid = Rdot(component operands)                  nearest-rounding compensated Dot2 midpoint
+rad = Dot2 a-priori radius using S_up           upward bound of sum |a_i*b_i|
+```
+
+This is the same contract as `vRdot_apriori`: the result is a rigorous `Rmidrad<REAL>` when the
+component status is `ok`. The fast path uses nearest-rounding arithmetic for the midpoint and only
+uses directed rounding for the scalar error-bound ingredients; it does not rely on BLAS/MPLAPACK
+honoring a directed rounding mode.
+
+If the a-priori path returns `unbounded`, the component falls back to the M12a directed `vRdot`
+reference enclosure and keeps the better scalar status. This matters for cases such as huge exact
+cancellation where `sum |a_i*b_i|` overflows in the a-priori bound but the directed enclosure of the
+actual dot product is finite. `non_finite` and `invalid_input` are not hidden by the fallback.
+
+`vRgemm_midrad` is still deferred; M12b covers point matrix inputs only.
 
 ## `vRdot`
 

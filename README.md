@@ -46,9 +46,11 @@ For scalar `Rmidrad` components with `status == ok`, the true finite result is g
 
 For `status == unbounded`, the certificate is still valid but useless: `rad == +inf`, representing `[-inf,+inf]`. This is used when finite inputs overflow during bound construction. For `status == non_finite`, an input was NaN or Inf, so no finite-real certificate is claimed. For `status == invalid_input`, the arguments violate the verified API boundary rules.
 
-M12a linear-algebra routines return `VerificationStatus` at the operation level: `Verified` means every
+M12 linear-algebra routines return `VerificationStatus` at the operation level: `Verified` means every
 component box is `ok`; `Unverified` means at least one component is `unbounded` or `non_finite`;
 `InvalidInput` means a boundary-rule violation; `Unsupported` is reserved for future LA modes.
+`vRgemv_point` and `vRgemm_point` use the M12b a-priori component enclosure first and fall back to the
+M12a directed component enclosure when the a-priori bound is unbounded.
 
 Verification means interval inclusion, not closeness to an MPFR point. Tests compare verified intervals against an MPFR oracle interval `[ref_lo, ref_hi]`.
 

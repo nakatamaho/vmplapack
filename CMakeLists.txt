@@ -378,6 +378,16 @@ if(VMPLAPACK_ENABLE_TESTS)
             add_test(NAME test_M12a_reference_mpfr_w512 COMMAND test_M12a_reference)
             set_tests_properties(test_M12a_reference_mpfr_w512
                 PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+
+            add_executable(test_M12b_fast_matmul tests/test_M12b_fast_matmul.cpp)
+            target_link_libraries(test_M12b_fast_matmul PRIVATE vmplapack::vmplapack)
+            add_test(NAME test_M12b_fast_matmul_native COMMAND test_M12b_fast_matmul)
+            add_test(NAME test_M12b_fast_matmul_mpfr_w53 COMMAND test_M12b_fast_matmul)
+            set_tests_properties(test_M12b_fast_matmul_mpfr_w53
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")
+            add_test(NAME test_M12b_fast_matmul_mpfr_w512 COMMAND test_M12b_fast_matmul)
+            set_tests_properties(test_M12b_fast_matmul_mpfr_w512
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
         endif()
     endif()
 endif()

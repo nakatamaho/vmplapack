@@ -200,6 +200,24 @@ inline VerificationStatus worst_verification_status(VerificationStatus a, Verifi
     return (VerificationStatus_rank(a) >= VerificationStatus_rank(b)) ? a : b;
 }
 
+template <class REAL>
+Rmidrad<REAL> vRdot_apriori_with_reference_fallback(std::ptrdiff_t n,
+                                                    const REAL* x,
+                                                    std::ptrdiff_t incx,
+                                                    const REAL* y,
+                                                    std::ptrdiff_t incy) {
+    Rmidrad<REAL> fast = vRdot_apriori(n, x, incx, y, incy);
+    if (fast.status != Rstatus::unbounded) {
+        return fast;
+    }
+
+    Rmidrad<REAL> reference = vRdot(n, x, incx, y, incy);
+    if (Rstatus_rank(reference.status) < Rstatus_rank(fast.status)) {
+        return reference;
+    }
+    return fast;
+}
+
 inline bool apriori_length_gate(std::ptrdiff_t n, long precision_bits) {
     if (n < 0 || precision_bits <= 0) {
         return false;
@@ -585,7 +603,7 @@ VerificationStatus vRgemv_point(std::ptrdiff_t m,
 
     VerificationStatus status = VerificationStatus::Verified;
     for (std::ptrdiff_t row = 0; row < m; ++row) {
-        Rmidrad<REAL> box = vRdot(n, A_data + row * lda, 1, x, incx);
+        Rmidrad<REAL> box = detail::vRdot_apriori_with_reference_fallback(n, A_data + row * lda, 1, x, incx);
         out[row] = box;
         status = detail::worst_verification_status(status, detail::verification_status_from_box(box.status));
     }
@@ -629,7 +647,7 @@ VerificationStatus vRgemm_point(std::ptrdiff_t m,
     VerificationStatus status = VerificationStatus::Verified;
     for (std::ptrdiff_t row = 0; row < m; ++row) {
         for (std::ptrdiff_t col = 0; col < n; ++col) {
-            Rmidrad<REAL> box = vRdot(k, A_data + row * lda, 1, B_data + col, ldb);
+            Rmidrad<REAL> box = detail::vRdot_apriori_with_reference_fallback(k, A_data + row * lda, 1, B_data + col, ldb);
             C_data[row * ldc + col] = box;
             status = detail::worst_verification_status(status, detail::verification_status_from_box(box.status));
         }
