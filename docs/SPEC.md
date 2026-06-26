@@ -1084,6 +1084,46 @@ contract in `ROADMAP.md` applies) is specified separately when reached.*
   bound falls back to the directed reference instead of reporting `unbounded` for an exactly cancelling
   finite case.
 
+- **M13 — Verified solve + nonsingularity contract.** Add `vRgesv` overloads for square point
+  systems with vector and matrix right-hand sides:
+
+  ```cpp
+  template <class REAL>
+  VerificationStatus vRgesv(std::ptrdiff_t n,
+                            const REAL* A, std::ptrdiff_t lda,
+                            const REAL* b, std::ptrdiff_t incb,
+                            Rmidrad<REAL>* x, std::ptrdiff_t incx);
+
+  template <class REAL>
+  VerificationStatus vRgesv(std::ptrdiff_t n, std::ptrdiff_t nrhs,
+                            const REAL* A, std::ptrdiff_t lda,
+                            const REAL* B, std::ptrdiff_t ldb,
+                            Rmidrad<REAL>* X, std::ptrdiff_t ldx);
+  ```
+
+  Storage is row-major. `A` is an `n x n` point matrix indexed `A[i*lda+j]`, with `lda >= n`. For
+  the vector overload, `b[i*incb]` is the right-hand side and `x[i*incx]` is the output enclosure for
+  solution component `i`. For the matrix overload, `B[i*ldb+r]` is right-hand side column `r` and
+  `X[i*ldx+r]` is the corresponding output enclosure, with `ldb >= nrhs` and `ldx >= nrhs`. Leading
+  dimensions and increments are measured in scalar elements, not bytes. Input and output ranges must
+  not overlap.
+
+  The implementation computes untrusted floating-point approximations `x~`/`X~` and an untrusted
+  approximate inverse or preconditioner `R`, then certifies them. The M13 certificate is normwise in
+  the infinity norm: compute an upward enclosure of `alpha = ||I - R*A||_inf`; for each RHS compute
+  the residual `b - A*x~` accurately, then an upward enclosure of
+  `beta = ||R*(b - A*x~)||_inf`. If `alpha < 1`, the system is certified nonsingular and every
+  component of that RHS is enclosed with midpoint `x~_i` and radius `beta/(1-alpha)`. For matrix RHS,
+  `alpha` is shared and `beta`/radius are per RHS column.
+
+  Boundary rules: negative dimensions, null required pointers, `lda < n`, `incb < 1`, `incx < 1`,
+  `ldb < nrhs`, or `ldx < nrhs` return `InvalidInput`. `n == 0` and, for the matrix overload,
+  `nrhs == 0`, write nothing and return `Verified`. Non-finite input returns `Unverified` and writes
+  `Rstatus::non_finite` boxes for all requested solution components. If `alpha >= 1`, a required
+  bound overflows, or certification otherwise fails, return `Unverified` and write `unbounded` boxes;
+  this is not a claim that `A` is singular. `Verified` means all requested solution components have
+  `Rstatus::ok` and the true solution is included.
+
 ---
 
 ## Reference

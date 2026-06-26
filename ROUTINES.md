@@ -207,6 +207,65 @@ actual dot product is finite. `non_finite` and `invalid_input` are not hidden by
 
 `vRgemm_midrad` is still deferred; M12b covers point matrix inputs only.
 
+## M13 Verified Solve Contract
+
+M13 freezes the public solve signatures before implementation. Both overloads solve square point
+systems and return a top-level `VerificationStatus`:
+
+```cpp
+template <class REAL>
+VerificationStatus vRgesv(std::ptrdiff_t n,
+                          const REAL* A,
+                          std::ptrdiff_t lda,
+                          const REAL* b,
+                          std::ptrdiff_t incb,
+                          Rmidrad<REAL>* x,
+                          std::ptrdiff_t incx);
+
+template <class REAL>
+VerificationStatus vRgesv(std::ptrdiff_t n,
+                          std::ptrdiff_t nrhs,
+                          const REAL* A,
+                          std::ptrdiff_t lda,
+                          const REAL* B,
+                          std::ptrdiff_t ldb,
+                          Rmidrad<REAL>* X,
+                          std::ptrdiff_t ldx);
+```
+
+Storage is row-major and all strides are measured in scalar elements. `A` is `n x n` with
+`A[i*lda+j]` and `lda >= n`. In the vector overload, `b[i*incb]` is the input RHS and `x[i*incx]` is
+the solution enclosure. In the matrix overload, `B[i*ldb+r]` is RHS column `r` and `X[i*ldx+r]` is
+the matching solution enclosure, with `ldb >= nrhs` and `ldx >= nrhs`. Input and output ranges must
+not overlap.
+
+The certificate is normwise in the infinity norm. The routine may use any untrusted floating-point
+inner engine to compute an approximate solution `x~`/`X~` and approximate inverse/preconditioner `R`.
+It then verifies:
+
+```text
+alpha = upward_bound(||I - R*A||_inf)
+beta  = upward_bound(||R*(b - A*x~)||_inf)   per RHS column
+rad   = beta / (1 - alpha)
+```
+
+If `alpha < 1`, `A` is certified nonsingular and each output component for that RHS is
+`{mid = x~_i, rad = rad, status = ok}`. For matrix RHS, `alpha` is shared across columns and `beta`
+/ `rad` are per column. The residual `b - A*x~` must be computed accurately using the M12/M4 dot
+infrastructure; a naive residual is not part of the M13 contract.
+
+Boundary and status rules:
+
+```text
+n < 0, nrhs < 0, invalid pointers/strides/leading dimensions   InvalidInput
+n == 0, or matrix overload nrhs == 0                            Verified, write nothing
+non-finite A or RHS input                                       Unverified, non_finite boxes
+alpha >= 1 or bound construction overflows/fails                Unverified, unbounded boxes
+alpha < 1 and all requested boxes ok                            Verified
+```
+
+`Unverified` is only a failed certificate. It is never a claim that `A` is singular.
+
 ## `vRdot`
 
 Signature:
