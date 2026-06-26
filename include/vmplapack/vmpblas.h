@@ -58,6 +58,26 @@ Rstatus vRresidual(std::ptrdiff_t m,
                    Rmidrad<REAL>* out);
 
 template <class REAL>
+VerificationStatus vRgemv_point(std::ptrdiff_t m,
+                                std::ptrdiff_t n,
+                                const REAL* A,
+                                std::ptrdiff_t lda,
+                                const REAL* x,
+                                std::ptrdiff_t incx,
+                                Rmidrad<REAL>* out);
+
+template <class REAL>
+VerificationStatus vRgemm_point(std::ptrdiff_t m,
+                                std::ptrdiff_t n,
+                                std::ptrdiff_t k,
+                                const REAL* A,
+                                std::ptrdiff_t lda,
+                                const REAL* B,
+                                std::ptrdiff_t ldb,
+                                Rmidrad<REAL>* C,
+                                std::ptrdiff_t ldc);
+
+template <class REAL>
 REAL Rsum(std::ptrdiff_t n, const REAL* x, std::ptrdiff_t incx) {
     using A = Rarith<REAL>;
 
@@ -164,6 +184,20 @@ Rmidrad<REAL> non_finite_midrad() {
 
 inline Rstatus worst_status(Rstatus a, Rstatus b) {
     return (Rstatus_rank(a) >= Rstatus_rank(b)) ? a : b;
+}
+
+inline VerificationStatus verification_status_from_box(Rstatus status) {
+    if (status == Rstatus::ok) {
+        return VerificationStatus::Verified;
+    }
+    if (status == Rstatus::invalid_input) {
+        return VerificationStatus::InvalidInput;
+    }
+    return VerificationStatus::Unverified;
+}
+
+inline VerificationStatus worst_verification_status(VerificationStatus a, VerificationStatus b) {
+    return (VerificationStatus_rank(a) >= VerificationStatus_rank(b)) ? a : b;
 }
 
 inline bool apriori_length_gate(std::ptrdiff_t n, long precision_bits) {
@@ -519,6 +553,90 @@ Rstatus vRresidual(std::ptrdiff_t m,
     return worst;
 }
 
+
+template <class REAL>
+VerificationStatus vRgemv_point(std::ptrdiff_t m,
+                                std::ptrdiff_t n,
+                                const REAL* A_data,
+                                std::ptrdiff_t lda,
+                                const REAL* x,
+                                std::ptrdiff_t incx,
+                                Rmidrad<REAL>* out) {
+    using Arith = Rarith<REAL>;
+
+    if (m < 0 || n < 0) {
+        return VerificationStatus::InvalidInput;
+    }
+    if (m == 0) {
+        return VerificationStatus::Verified;
+    }
+    if (out == nullptr) {
+        return VerificationStatus::InvalidInput;
+    }
+    if (n == 0) {
+        for (std::ptrdiff_t row = 0; row < m; ++row) {
+            out[row] = {Arith::zero(), Arith::zero(), Rstatus::ok};
+        }
+        return VerificationStatus::Verified;
+    }
+    if (A_data == nullptr || x == nullptr || lda < n || incx < 1) {
+        return VerificationStatus::InvalidInput;
+    }
+
+    VerificationStatus status = VerificationStatus::Verified;
+    for (std::ptrdiff_t row = 0; row < m; ++row) {
+        Rmidrad<REAL> box = vRdot(n, A_data + row * lda, 1, x, incx);
+        out[row] = box;
+        status = detail::worst_verification_status(status, detail::verification_status_from_box(box.status));
+    }
+    return status;
+}
+
+
+template <class REAL>
+VerificationStatus vRgemm_point(std::ptrdiff_t m,
+                                std::ptrdiff_t n,
+                                std::ptrdiff_t k,
+                                const REAL* A_data,
+                                std::ptrdiff_t lda,
+                                const REAL* B_data,
+                                std::ptrdiff_t ldb,
+                                Rmidrad<REAL>* C_data,
+                                std::ptrdiff_t ldc) {
+    using Arith = Rarith<REAL>;
+
+    if (m < 0 || n < 0 || k < 0) {
+        return VerificationStatus::InvalidInput;
+    }
+    if (m == 0 || n == 0) {
+        return VerificationStatus::Verified;
+    }
+    if (C_data == nullptr || ldc < n) {
+        return VerificationStatus::InvalidInput;
+    }
+    if (k == 0) {
+        for (std::ptrdiff_t row = 0; row < m; ++row) {
+            for (std::ptrdiff_t col = 0; col < n; ++col) {
+                C_data[row * ldc + col] = {Arith::zero(), Arith::zero(), Rstatus::ok};
+            }
+        }
+        return VerificationStatus::Verified;
+    }
+    if (A_data == nullptr || B_data == nullptr || lda < k || ldb < n) {
+        return VerificationStatus::InvalidInput;
+    }
+
+    VerificationStatus status = VerificationStatus::Verified;
+    for (std::ptrdiff_t row = 0; row < m; ++row) {
+        for (std::ptrdiff_t col = 0; col < n; ++col) {
+            Rmidrad<REAL> box = vRdot(k, A_data + row * lda, 1, B_data + col, ldb);
+            C_data[row * ldc + col] = box;
+            status = detail::worst_verification_status(status, detail::verification_status_from_box(box.status));
+        }
+    }
+    return status;
+}
+
 extern template float Rsum<float>(std::ptrdiff_t, const float*, std::ptrdiff_t);
 extern template double Rsum<double>(std::ptrdiff_t, const double*, std::ptrdiff_t);
 extern template float Rdot<float>(std::ptrdiff_t, const float*, std::ptrdiff_t, const float*, std::ptrdiff_t);
@@ -561,6 +679,38 @@ extern template Rstatus vRresidual<double>(std::ptrdiff_t,
                                            const double*,
                                            const double*,
                                            Rmidrad<double>*);
+extern template VerificationStatus vRgemv_point<float>(std::ptrdiff_t,
+                                                       std::ptrdiff_t,
+                                                       const float*,
+                                                       std::ptrdiff_t,
+                                                       const float*,
+                                                       std::ptrdiff_t,
+                                                       Rmidrad<float>*);
+extern template VerificationStatus vRgemv_point<double>(std::ptrdiff_t,
+                                                        std::ptrdiff_t,
+                                                        const double*,
+                                                        std::ptrdiff_t,
+                                                        const double*,
+                                                        std::ptrdiff_t,
+                                                        Rmidrad<double>*);
+extern template VerificationStatus vRgemm_point<float>(std::ptrdiff_t,
+                                                       std::ptrdiff_t,
+                                                       std::ptrdiff_t,
+                                                       const float*,
+                                                       std::ptrdiff_t,
+                                                       const float*,
+                                                       std::ptrdiff_t,
+                                                       Rmidrad<float>*,
+                                                       std::ptrdiff_t);
+extern template VerificationStatus vRgemm_point<double>(std::ptrdiff_t,
+                                                        std::ptrdiff_t,
+                                                        std::ptrdiff_t,
+                                                        const double*,
+                                                        std::ptrdiff_t,
+                                                        const double*,
+                                                        std::ptrdiff_t,
+                                                        Rmidrad<double>*,
+                                                        std::ptrdiff_t);
 
 #ifdef VMPLAPACK_ENABLE_MPFR
 extern template mpfrxx::mpfr_class Rsum<mpfrxx::mpfr_class>(std::ptrdiff_t,
@@ -596,6 +746,22 @@ extern template Rstatus vRresidual<mpfrxx::mpfr_class>(std::ptrdiff_t,
                                                        const mpfrxx::mpfr_class*,
                                                        const mpfrxx::mpfr_class*,
                                                        Rmidrad<mpfrxx::mpfr_class>*);
+extern template VerificationStatus vRgemv_point<mpfrxx::mpfr_class>(std::ptrdiff_t,
+                                                                    std::ptrdiff_t,
+                                                                    const mpfrxx::mpfr_class*,
+                                                                    std::ptrdiff_t,
+                                                                    const mpfrxx::mpfr_class*,
+                                                                    std::ptrdiff_t,
+                                                                    Rmidrad<mpfrxx::mpfr_class>*);
+extern template VerificationStatus vRgemm_point<mpfrxx::mpfr_class>(std::ptrdiff_t,
+                                                                    std::ptrdiff_t,
+                                                                    std::ptrdiff_t,
+                                                                    const mpfrxx::mpfr_class*,
+                                                                    std::ptrdiff_t,
+                                                                    const mpfrxx::mpfr_class*,
+                                                                    std::ptrdiff_t,
+                                                                    Rmidrad<mpfrxx::mpfr_class>*,
+                                                                    std::ptrdiff_t);
 #endif
 
 } // namespace vmplapack

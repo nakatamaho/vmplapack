@@ -119,6 +119,73 @@ rounding-backend fields. Rows for routines without enclosures use explicit `null
 Smoke mode is intended for CI. Full mode adds extra random condition targets and orderings for manual
 benchmark sweeps.
 
+## M12a Verified Matvec/Matmul Reference
+
+M12a adds the first verified linear-algebra layer status type:
+
+```cpp
+enum class VerificationStatus { Verified, Unverified, InvalidInput, Unsupported };
+```
+
+This status is separate from scalar `Rstatus`. Each output component is still an `Rmidrad<REAL>` with
+its own scalar status. The top-level status summarizes the matrix operation:
+
+```text
+Verified       every requested component has Rstatus::ok
+Unverified     arguments are well-formed, but at least one component is unbounded or non_finite
+InvalidInput   dimension, pointer, stride, or leading-dimension contract violation
+Unsupported    reserved for future LA modes not implemented by the current reference path
+```
+
+M12a point matvec, row-major storage:
+
+```cpp
+template <class REAL>
+VerificationStatus vRgemv_point(std::ptrdiff_t m,
+                                std::ptrdiff_t n,
+                                const REAL* A,
+                                std::ptrdiff_t lda,
+                                const REAL* x,
+                                std::ptrdiff_t incx,
+                                Rmidrad<REAL>* out);
+```
+
+It computes enclosures for `out[i] ~= sum_j A[i*lda+j] * x[j*incx]`. Boundary rules:
+
+```text
+m < 0 or n < 0                         InvalidInput
+m == 0                                  Verified, write nothing
+m > 0 and out == nullptr                InvalidInput
+n == 0                                  out[i] = {0, 0, ok}
+n > 0 and A/x null, lda < n, incx < 1   InvalidInput
+non-finite or overflowed component       component Rstatus, top-level Unverified
+```
+
+M12a point matmul, row-major storage:
+
+```cpp
+template <class REAL>
+VerificationStatus vRgemm_point(std::ptrdiff_t m,
+                                std::ptrdiff_t n,
+                                std::ptrdiff_t k,
+                                const REAL* A,
+                                std::ptrdiff_t lda,
+                                const REAL* B,
+                                std::ptrdiff_t ldb,
+                                Rmidrad<REAL>* C,
+                                std::ptrdiff_t ldc);
+```
+
+It computes enclosures for `C[i*ldc+j] ~= sum_t A[i*lda+t] * B[t*ldb+j]`. Boundary rules mirror
+`vRgemv_point`: negative dimensions are invalid, `m == 0 || n == 0` writes nothing and verifies,
+`k == 0` writes exact zero boxes, and otherwise `C`, `A`, `B`, `ldc >= n`, `lda >= k`, and `ldb >= n`
+are required.
+
+M12a is the slow correctness baseline: each component delegates to the existing directed scalar
+`vRdot` path. It does not call BLAS/MPLAPACK and does not assume any external kernel honors directed
+rounding. M12b may add a faster nearest-rounding enclosure later, but the M12a reference remains the
+comparison path.
+
 ## `vRdot`
 
 Signature:

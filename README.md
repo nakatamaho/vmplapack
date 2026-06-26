@@ -34,15 +34,21 @@ Verified routines return a midpoint-radius enclosure plus a status:
 vRsum(n, x, incx)
 vRdot(n, x, incx, y, incy)
 vRresidual(m, n, A, lda, x, b, out)
+vRgemv_point(m, n, A, lda, x, incx, out)
+vRgemm_point(m, n, k, A, lda, B, ldb, C, ldc)
 ```
 
-For `status == ok`, the true finite result is guaranteed to be in:
+For scalar `Rmidrad` components with `status == ok`, the true finite result is guaranteed to be in:
 
 ```text
 [mid - rad, mid + rad]
 ```
 
 For `status == unbounded`, the certificate is still valid but useless: `rad == +inf`, representing `[-inf,+inf]`. This is used when finite inputs overflow during bound construction. For `status == non_finite`, an input was NaN or Inf, so no finite-real certificate is claimed. For `status == invalid_input`, the arguments violate the verified API boundary rules.
+
+M12a linear-algebra routines return `VerificationStatus` at the operation level: `Verified` means every
+component box is `ok`; `Unverified` means at least one component is `unbounded` or `non_finite`;
+`InvalidInput` means a boundary-rule violation; `Unsupported` is reserved for future LA modes.
 
 Verification means interval inclusion, not closeness to an MPFR point. Tests compare verified intervals against an MPFR oracle interval `[ref_lo, ref_hi]`.
 

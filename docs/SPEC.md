@@ -24,7 +24,7 @@ of bounds, NaN-vs-Inf classification, empty/invalid inputs, MPFR fixed-precision
 rounding, condition-aware testing). **These hardening rules are load-bearing for the word
 "verified" ― do not relax them.**
 
-Implement **milestone by milestone (M0 → M11)**, one commit/PR per milestone; do **not** start a
+Implement **milestone by milestone (M0 → M12a)**, one commit/PR per milestone; do **not** start a
 milestone until the previous one's acceptance tests pass. If you find a reason to deviate from the
 signatures, `Rmidrad`/`Rstatus`, the `Rarith<REAL>` interface, the preconditions (§6), the
 boundary rules (§8), or the rounding contract (§9), **stop and report** instead of silently
@@ -1037,6 +1037,38 @@ stopping to report.
 ("vMPLAPACK-core") over `float`, `double`, and MPFR, with no MPLAPACK dependency. The
 verified-linear-algebra phase (M12+, where the no-MPLAPACK constraint is lifted and the verification
 contract in `ROADMAP.md` applies) is specified separately when reached.*
+
+- **M12a — Verified matvec/matmul reference.** Add the linear-algebra-layer status type
+  `VerificationStatus { Verified, Unverified, InvalidInput, Unsupported }`, separate from scalar
+  `Rstatus`. Add row-major point-matrix reference routines:
+
+  ```cpp
+  template <class REAL>
+  VerificationStatus vRgemv_point(std::ptrdiff_t m, std::ptrdiff_t n,
+                                  const REAL* A, std::ptrdiff_t lda,
+                                  const REAL* x, std::ptrdiff_t incx,
+                                  Rmidrad<REAL>* out);
+
+  template <class REAL>
+  VerificationStatus vRgemm_point(std::ptrdiff_t m, std::ptrdiff_t n, std::ptrdiff_t k,
+                                  const REAL* A, std::ptrdiff_t lda,
+                                  const REAL* B, std::ptrdiff_t ldb,
+                                  Rmidrad<REAL>* C, std::ptrdiff_t ldc);
+  ```
+
+  Storage is row-major. `vRgemv_point` encloses each component `sum_j A[i,j]*x[j]`; `vRgemm_point`
+  encloses each component `sum_t A[i,t]*B[t,j]`. M12a is the slow correctness baseline: own
+  certification path via directed scalar component enclosures, no BLAS/MPLAPACK in the proof path, no
+  M12b nearest-rounding fast enclosure. Boundary rules: negative dimensions or invalid pointers,
+  strides, or leading dimensions return `InvalidInput`; zero output dimensions write nothing and return
+  `Verified`; zero inner dimension writes exact zero boxes; finite regular components with
+  `Rstatus::ok` yield top-level `Verified`; any `unbounded` or `non_finite` component yields top-level
+  `Unverified`. `Unsupported` is reserved for future LA modes not implemented by M12a.
+
+  *Accept:* MPFR-on tests verify `float`, `double`, and MPFR W=53/W=512 component inclusion against
+  the high-precision dot oracle for cancellation-heavy matvec and matmul cases; boundary tests cover
+  zero dimensions, invalid inputs, non-finite inputs, overflow-to-`unbounded`, and strided vectors.
+  Native-only builds compile the float/double instantiations and keep all native tests green.
 
 ---
 

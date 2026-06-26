@@ -39,7 +39,7 @@ It is **NOT** an MPLAPACK patch and must not depend on the MPLAPACK source tree.
 ## Golden rules (non-negotiable)
 
 1. **Soundness over tightness; correctness over cleverness.**
-2. **Milestone order is law.** Implement strictly M0 → M11 (see `docs/SPEC.md` §14 and `ROADMAP.md`). **One PR per
+2. **Milestone order is law.** Implement strictly M0 → M12a (see `docs/SPEC.md` §14 and `ROADMAP.md`). **One PR per
    milestone.** Do not start a milestone until the previous one's acceptance tests pass.
 3. **Frozen contracts.** Do not change the public signatures, `Rmidrad`/`Rstatus`, the
    `Rarith<REAL>` interface, the EFT preconditions (`SPEC §6`), the boundary rules (`SPEC §8`), or
@@ -110,7 +110,7 @@ include/vmplapack/
   vmplapack_arith.h                # Rarith<REAL>
   vmplapack_eft.h                  # Rtwosum / Rfasttwosum / Rtwoproduct / Rsplit
 src/                               # one routine per .cpp; explicit template instantiation
-  Rsum.cpp Rdot.cpp vRsum.cpp vRdot.cpp vRresidual.cpp
+  Rsum.cpp Rdot.cpp vRsum.cpp vRdot.cpp vRresidual.cpp vRgemv_point.cpp vRgemm_point.cpp
 tests/                            # Rdot_oracle.h, Rgendot.h, test_*.cpp
 examples/                         # example_vRdot.cpp, example_vRresidual.cpp
 docs/SPEC.md                       # the authoritative specification

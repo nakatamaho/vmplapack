@@ -10,6 +10,27 @@
 
 namespace vmplapack {
 
+enum class VerificationStatus {
+    Verified,
+    Unverified,
+    InvalidInput,
+    Unsupported
+};
+
+inline int VerificationStatus_rank(VerificationStatus s) {
+    switch (s) {
+        case VerificationStatus::Verified:
+            return 0;
+        case VerificationStatus::Unverified:
+            return 1;
+        case VerificationStatus::InvalidInput:
+            return 2;
+        case VerificationStatus::Unsupported:
+            return 3;
+    }
+    return 3;
+}
+
 enum class Rstatus {
     ok,
     unbounded,

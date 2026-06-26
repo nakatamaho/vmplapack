@@ -48,6 +48,8 @@ add_library(vmplapack
     src/Rsum_abs_dot_upper.cpp
     src/vRdot.cpp
     src/vRdot_apriori.cpp
+    src/vRgemm_point.cpp
+    src/vRgemv_point.cpp
     src/vRresidual.cpp
     src/vRsum.cpp)
 add_library(vmplapack::vmplapack ALIAS vmplapack)
@@ -365,6 +367,16 @@ if(VMPLAPACK_ENABLE_TESTS)
                 PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")
             add_test(NAME test_Rgendot_m8_mpfr_w512 COMMAND test_Rgendot_m8)
             set_tests_properties(test_Rgendot_m8_mpfr_w512
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+
+            add_executable(test_M12a_reference tests/test_M12a_reference.cpp)
+            target_link_libraries(test_M12a_reference PRIVATE vmplapack::vmplapack)
+            add_test(NAME test_M12a_reference_native COMMAND test_M12a_reference)
+            add_test(NAME test_M12a_reference_mpfr_w53 COMMAND test_M12a_reference)
+            set_tests_properties(test_M12a_reference_mpfr_w53
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")
+            add_test(NAME test_M12a_reference_mpfr_w512 COMMAND test_M12a_reference)
+            set_tests_properties(test_M12a_reference_mpfr_w512
                 PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
         endif()
     endif()
