@@ -155,6 +155,52 @@ If gmpfrxx_mkII is not in the default probe location, pass:
 -DGMPFRXX_MKII_INCLUDE_DIR=/path/to/gmpfrxx_mkII/include
 ```
 
+## Testing vRgemm_point
+
+`vRgemm_point` is tested in the M12 suites. These focused tests are registered in MPFR-enabled
+builds because they compare each component enclosure against an MPFR oracle interval; the same test
+executables also exercise the native `float` and `double` tiers.
+
+Build and run only the M12 `vRgemv_point` / `vRgemm_point` tests:
+
+```bash
+cmake -S . -B build -DVMPLAPACK_ENABLE_MPFR=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build -j
+ctest --test-dir build -R 'test_M12a_reference|test_M12b_fast_matmul' --output-on-failure
+```
+
+`test_M12a_reference` checks the reference directed-rounding enclosure, row-major leading-dimension
+layout, boundary rules, `k == 0`, invalid inputs, and oracle inclusion. `test_M12b_fast_matmul`
+checks the fast a-priori component enclosure, cancellation-heavy components, fallback behavior, and
+that the fast path is tighter than the directed reference where expected.
+
+The M12 GEMM examples are useful for inspecting the actual boxes:
+
+```bash
+cmake --build build -j --target \
+  example_m12_verified_gemm \
+  example_m12_verified_gemm_oracle_diff \
+  example_m12_random_high_condition_gemm \
+  example_m12_verified_gemm_large_diff
+
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_oracle_diff
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_random_high_condition_gemm --m 5 --n 5 --k 13 --seed 123
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_large_diff --m 5 --n 5 --k 13 --seed 123
+```
+
+For quiet smoke runs, pass `--no-matrices` to the random/high-difference examples:
+
+```bash
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_random_high_condition_gemm --no-matrices
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_large_diff --no-matrices
+```
+
+Read the output as follows: `return status = Verified` means every component has `Rstatus::ok`;
+`all oracle intervals covered = true` is the MPFR-oracle inclusion check; `result C.rad` is the
+verified certificate radius; and `result C.diff` is only the displayed center error
+`C.mid - oracle C midpoint`, not the certificate.
+
 ## Install and Consume
 
 M10 installs an exported CMake package. Native-only installs do not require GMP/MPFR at consumer
@@ -189,6 +235,10 @@ example_m4_accurate_sum
 example_m7_apriori_bound
 example_m11_dot_driver
 example_m11_residual_worked
+example_m12_verified_gemm
+example_m12_verified_gemm_oracle_diff
+example_m12_random_high_condition_gemm
+example_m12_verified_gemm_large_diff
 example_m3_oracle_generators
 ```
 
