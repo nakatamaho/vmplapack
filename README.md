@@ -179,22 +179,31 @@ The M12 GEMM examples are useful for inspecting the actual boxes:
 ```bash
 cmake --build build -j --target \
   example_m12_verified_gemm \
-  example_m12_verified_gemm_oracle_diff \
+  example_m12_verified_gemm_midpoint_error \
   example_m12_random_high_condition_gemm \
-  example_m12_verified_gemm_large_diff
+  example_m12_verified_gemm_medium_diff
 
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm
-MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_oracle_diff
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_midpoint_error --m 4 --n 4 --k 10 --seed 17
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_random_high_condition_gemm --m 5 --n 5 --k 13 --seed 123
-MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_large_diff --m 5 --n 5 --k 13 --seed 123
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_medium_diff --m 5 --n 5 --k 13 --seed 123
 ```
 
-For quiet smoke runs, pass `--no-matrices` to the random/high-difference examples:
+For quiet smoke runs, pass `--no-matrices` to the random/medium-difference examples:
 
 ```bash
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_midpoint_error --no-matrices
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_random_high_condition_gemm --no-matrices
-MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_large_diff --no-matrices
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_medium_diff --no-matrices
 ```
+
+`example_m12_verified_gemm_midpoint_error` is intentionally not a high-condition generator. It uses
+`--m`, `--n`, `--k`, `--seed`, and `--no-matrices`, then fills both point matrices with independent
+seeded signed rational entries. Each entry is `sign * n / d`, with `n` in `[1, 127]` and odd `d` in
+`[65, 255]`, rounded in the active tier. This gives natural-looking small matrices and keeps
+`C.diff = C.mid - oracle midpoint` at ordinary rounding-error scale. Use
+`example_m12_random_high_condition_gemm` when you want condition-targeting options such as `--cond`,
+`--float-cond`, `--double-cond`, and `--mpfr-cond`.
 
 Read the output as follows: `return status = Verified` means every component has `Rstatus::ok`;
 `all oracle intervals covered = true` is the MPFR-oracle inclusion check; `result C.rad` is the
@@ -236,9 +245,9 @@ example_m7_apriori_bound
 example_m11_dot_driver
 example_m11_residual_worked
 example_m12_verified_gemm
-example_m12_verified_gemm_oracle_diff
+example_m12_verified_gemm_midpoint_error
 example_m12_random_high_condition_gemm
-example_m12_verified_gemm_large_diff
+example_m12_verified_gemm_medium_diff
 example_m3_oracle_generators
 ```
 

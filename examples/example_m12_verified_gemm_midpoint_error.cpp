@@ -6,7 +6,6 @@
 #include <vmplapack/vmplapack.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -28,54 +27,27 @@ struct options {
     bool no_matrices;
 };
 
-template <class REAL>
-struct large_diff_exponents;
-
-template <>
-struct large_diff_exponents<float> {
-    static constexpr int p = 100;
-    static constexpr int h1 = 40;
-    static constexpr int h2 = 0;
-};
-
-template <>
-struct large_diff_exponents<double> {
-    static constexpr int p = 900;
-    static constexpr int h1 = 80;
-    static constexpr int h2 = 0;
-};
-
-template <>
-struct large_diff_exponents<mpfrxx::mpfr_class> {
-    static constexpr int p = 1800;
-    static constexpr int h1 = 600;
-    static constexpr int h2 = 0;
-};
-
-constexpr unsigned dyadic_random_bits = 10U;
-constexpr unsigned dyadic_random_bins = 1U << dyadic_random_bits;
-constexpr std::ptrdiff_t large_diff_block_width = 5;
-constexpr std::ptrdiff_t large_diff_high_random_terms = 2;
-constexpr std::ptrdiff_t large_diff_h1_offset = large_diff_high_random_terms;
-constexpr std::ptrdiff_t large_diff_h2_offset = large_diff_high_random_terms + 1;
-constexpr std::ptrdiff_t large_diff_high_correction_offset = large_diff_block_width - 1;
+constexpr unsigned rational_numerator_min = 1U;
+constexpr unsigned rational_numerator_span = 127U;
+constexpr unsigned rational_denominator_min = 65U;
+constexpr unsigned rational_denominator_span = 191U;
 
 options default_options() {
     options opt;
-    opt.m = 3;
-    opt.n = 3;
-    opt.k = 9;
-    opt.seed = 29U;
+    opt.m = 4;
+    opt.n = 4;
+    opt.k = 10;
+    opt.seed = 17U;
     opt.no_matrices = false;
     return opt;
 }
 
 void print_usage(const char* program) {
     std::cout << "usage: " << program << " [options]\n"
-              << "  --m M                  output rows (default 3)\n"
-              << "  --n N                  output columns (default 3)\n"
-              << "  --k K                  inner dimension, K >= 5 (default 9)\n"
-              << "  --seed S               random seed (default 29)\n"
+              << "  --m M                  output rows (default 4)\n"
+              << "  --n N                  output columns (default 4)\n"
+              << "  --k K                  inner dimension, K > 0 (default 10)\n"
+              << "  --seed S               random seed (default 17)\n"
               << "  --no-matrices          suppress A, B, C.mid, C.rad, C.diff\n";
 }
 
@@ -150,8 +122,8 @@ bool parse_options(int argc, char** argv, options* opt) {
 }
 
 bool validate_options(const options& opt) {
-    if (opt.m <= 0 || opt.n <= 0 || opt.k < large_diff_block_width) {
-        std::cerr << "requires --m > 0, --n > 0, and --k >= 5\n";
+    if (opt.m <= 0 || opt.n <= 0 || opt.k <= 0) {
+        std::cerr << "requires --m > 0, --n > 0, and --k > 0\n";
         return false;
     }
     return true;
@@ -175,6 +147,20 @@ int diff_output_digits() {
     return 3;
 }
 
+const char* status_name(vmplapack::Rstatus status) {
+    switch (status) {
+        case vmplapack::Rstatus::ok:
+            return "ok";
+        case vmplapack::Rstatus::unbounded:
+            return "unbounded";
+        case vmplapack::Rstatus::non_finite:
+            return "non_finite";
+        case vmplapack::Rstatus::invalid_input:
+            return "invalid_input";
+    }
+    return "invalid_input";
+}
+
 const char* status_name(vmplapack::VerificationStatus status) {
     switch (status) {
         case vmplapack::VerificationStatus::Verified:
@@ -190,40 +176,25 @@ const char* status_name(vmplapack::VerificationStatus status) {
 }
 
 template <class REAL>
-REAL power_of_two_value(int exponent) {
-    if constexpr (std::is_same<REAL, float>::value || std::is_same<REAL, double>::value) {
-        REAL value = static_cast<REAL>(std::ldexp(1.0, exponent));
-        return value;
-    } else if constexpr (std::is_same<REAL, mpfrxx::mpfr_class>::value) {
-        REAL value = REAL::with_precision(static_cast<mpfr_prec_t>(vmplapack::Rarith<REAL>::precision_bits()));
-        mpfr_set_ui_2exp(value.mpfr_data(), 1, static_cast<mpfr_exp_t>(exponent), MPFR_RNDN);
-        return value;
-    } else {
-        static_assert(vmplapack::Ralways_false<REAL>::value, "power_of_two_value does not support this REAL type.");
-    }
-}
-
-template <class REAL>
-REAL from_unsigned(unsigned value) {
+REAL from_int(int value) {
     REAL result = static_cast<REAL>(value);
     return result;
 }
 
 template <>
-mpfrxx::mpfr_class from_unsigned<mpfrxx::mpfr_class>(unsigned value) {
+mpfrxx::mpfr_class from_int<mpfrxx::mpfr_class>(int value) {
     mpfrxx::mpfr_class result =
         mpfrxx::mpfr_class::with_precision(static_cast<mpfr_prec_t>(vmplapack::Rarith<mpfrxx::mpfr_class>::precision_bits()));
-    mpfr_set_ui(result.mpfr_data(), static_cast<unsigned long>(value), MPFR_RNDN);
+    mpfr_set_si(result.mpfr_data(), static_cast<long>(value), MPFR_RNDN);
     return result;
 }
 
 template <class REAL>
-REAL random_dyadic_unit(std::mt19937_64* engine) {
-    unsigned bucket = static_cast<unsigned>((*engine)() & static_cast<std::uint64_t>(dyadic_random_bins - 1U));
-    REAL numerator = from_unsigned<REAL>(dyadic_random_bins + bucket);
-    REAL denominator = from_unsigned<REAL>(2U * dyadic_random_bins);
-    REAL value = numerator / denominator;
-    return value;
+REAL ratio_value(int numerator, int denominator) {
+    REAL n = from_int<REAL>(numerator);
+    REAL d = from_int<REAL>(denominator);
+    REAL q = n / d;
+    return q;
 }
 
 template <class REAL>
@@ -237,11 +208,31 @@ REAL random_sign(std::mt19937_64* engine) {
 }
 
 template <class REAL>
-REAL signed_scaled_power(int exponent, REAL sign, REAL scale) {
-    REAL base = power_of_two_value<REAL>(exponent);
-    REAL scaled = base * scale;
-    REAL value = sign * scaled;
-    return value;
+REAL random_rational_value(std::mt19937_64* engine) {
+    unsigned raw_numerator =
+        static_cast<unsigned>((*engine)() % static_cast<std::uint64_t>(rational_numerator_span)) + rational_numerator_min;
+    unsigned raw_denominator =
+        static_cast<unsigned>((*engine)() % static_cast<std::uint64_t>(rational_denominator_span)) + rational_denominator_min;
+    int numerator = static_cast<int>(raw_numerator);
+    int denominator = static_cast<int>(raw_denominator | 1U);
+    REAL value = ratio_value<REAL>(numerator, denominator);
+    REAL sign = random_sign<REAL>(engine);
+    REAL signed_value = sign * value;
+    return signed_value;
+}
+
+template <class REAL>
+REAL lower_display(const vmplapack::Rmidrad<REAL>& box) {
+    typename vmplapack::Rarith<REAL>::round_down scope;
+    REAL lo = box.mid - box.rad;
+    return lo;
+}
+
+template <class REAL>
+REAL upper_display(const vmplapack::Rmidrad<REAL>& box) {
+    typename vmplapack::Rarith<REAL>::round_up scope;
+    REAL hi = box.mid + box.rad;
+    return hi;
 }
 
 mpfrxx::mpfr_class interval_midpoint(const vmplapack::oracle::Rdot_interval& interval,
@@ -284,6 +275,18 @@ bool midrad_covers_oracle(const vmplapack::Rmidrad<REAL>& box,
 }
 
 template <class REAL>
+mpfrxx::mpfr_class midpoint_error(const vmplapack::Rmidrad<REAL>& box,
+                                  const mpfrxx::mpfr_class& oracle_mid,
+                                  mpfr_prec_t precision) {
+    mpfrxx::mpfr_class mid = vmplapack::oracle::widen_value(box.mid, precision);
+    mpfrxx::mpfr_class ref = vmplapack::oracle::widen_mpfr(oracle_mid, precision);
+    mpfrxx::mpfr_class diff = mpfrxx::mpfr_class::with_precision(precision);
+    diff = mid - ref;
+    mpfrxx::mpfr_class abs_diff = vmplapack::oracle::abs_at(diff, precision);
+    return abs_diff;
+}
+
+template <class REAL>
 mpfrxx::mpfr_class midpoint_difference(const vmplapack::Rmidrad<REAL>& box,
                                        const mpfrxx::mpfr_class& oracle_mid,
                                        mpfr_prec_t precision) {
@@ -295,115 +298,57 @@ mpfrxx::mpfr_class midpoint_difference(const vmplapack::Rmidrad<REAL>& box,
 }
 
 template <class REAL>
-mpfrxx::mpfr_class abs_midpoint_difference(const vmplapack::Rmidrad<REAL>& box,
-                                           const mpfrxx::mpfr_class& oracle_mid,
-                                           mpfr_prec_t precision) {
-    mpfrxx::mpfr_class diff = midpoint_difference(box, oracle_mid, precision);
-    mpfrxx::mpfr_class abs_diff = vmplapack::oracle::abs_at(diff, precision);
-    return abs_diff;
+bool midpoint_differs(const vmplapack::Rmidrad<REAL>& box,
+                      const mpfrxx::mpfr_class& oracle_mid,
+                      mpfr_prec_t precision) {
+    mpfrxx::mpfr_class mid = vmplapack::oracle::widen_value(box.mid, precision);
+    mpfrxx::mpfr_class ref = vmplapack::oracle::widen_mpfr(oracle_mid, precision);
+    return mpfr_cmp(mid.mpfr_data(), ref.mpfr_data()) != 0;
+}
+
+mpfrxx::mpfr_class condition_from_oracle_mid(const mpfrxx::mpfr_class& oracle_mid,
+                                             const mpfrxx::mpfr_class& sum_abs,
+                                             mpfr_prec_t precision) {
+    mpfrxx::mpfr_class abs_mid = vmplapack::oracle::abs_at(oracle_mid, precision);
+    if (abs_mid == vmplapack::oracle::zero_at(precision)) {
+        mpfrxx::mpfr_class inf = mpfrxx::mpfr_class::with_precision(precision);
+        mpfr_set_inf(inf.mpfr_data(), 1);
+        return inf;
+    }
+    mpfrxx::mpfr_class two = mpfrxx::mpfr_class::with_precision(precision, 2.0);
+    mpfrxx::mpfr_class numerator = mpfrxx::mpfr_class::with_precision(precision);
+    numerator = two * sum_abs;
+    mpfrxx::mpfr_class condition = mpfrxx::mpfr_class::with_precision(precision);
+    {
+        mpfrxx::rounding_mode_scope scope(MPFR_RNDU);
+        condition = numerator / abs_mid;
+    }
+    return condition;
 }
 
 template <class REAL>
-void build_random_large_diff_problem(std::ptrdiff_t m,
-                                     std::ptrdiff_t n,
-                                     std::ptrdiff_t k,
-                                     std::uint64_t seed,
-                                     std::vector<REAL>& left,
-                                     std::vector<REAL>& right) {
-    using A = vmplapack::Rarith<REAL>;
-
+void build_random_midpoint_problem(std::ptrdiff_t m,
+                                   std::ptrdiff_t n,
+                                   std::ptrdiff_t k,
+                                   std::uint64_t seed,
+                                   std::vector<REAL>& left,
+                                   std::vector<REAL>& right) {
     std::mt19937_64 engine(seed);
-    left.assign(static_cast<std::size_t>(m * k), A::zero());
-    right.assign(static_cast<std::size_t>(k * n), A::zero());
+    left.clear();
+    right.clear();
+    left.reserve(static_cast<std::size_t>(m * k));
+    right.reserve(static_cast<std::size_t>(k * n));
 
-    std::vector<REAL> h1_row_sign(static_cast<std::size_t>(m));
-    std::vector<REAL> h2_row_sign(static_cast<std::size_t>(m));
-    std::vector<REAL> h1_col_sign(static_cast<std::size_t>(n));
-    std::vector<REAL> h2_col_sign(static_cast<std::size_t>(n));
     for (std::ptrdiff_t row = 0; row < m; ++row) {
-        h1_row_sign[static_cast<std::size_t>(row)] = random_sign<REAL>(&engine);
-        h2_row_sign[static_cast<std::size_t>(row)] = random_sign<REAL>(&engine);
-    }
-    for (std::ptrdiff_t col = 0; col < n; ++col) {
-        h1_col_sign[static_cast<std::size_t>(col)] = random_sign<REAL>(&engine);
-        h2_col_sign[static_cast<std::size_t>(col)] = random_sign<REAL>(&engine);
-    }
-
-    std::ptrdiff_t blocks = k / large_diff_block_width;
-    for (std::ptrdiff_t block = 0; block < blocks; ++block) {
-        std::ptrdiff_t base = large_diff_block_width * block;
-        for (std::ptrdiff_t row = 0; row < m; ++row) {
-            std::vector<REAL> high_coefficients(static_cast<std::size_t>(large_diff_high_random_terms));
-            REAL high_sum = A::zero();
-            for (std::ptrdiff_t term = 0; term < large_diff_high_random_terms; ++term) {
-                REAL coeff_scale = random_dyadic_unit<REAL>(&engine);
-                REAL coeff_sign = random_sign<REAL>(&engine);
-                REAL coeff = coeff_sign * coeff_scale;
-                high_coefficients[static_cast<std::size_t>(term)] = coeff;
-                REAL next_sum = high_sum + coeff;
-                high_sum = next_sum;
-            }
-            if (high_sum == A::zero()) {
-                std::ptrdiff_t fallback_term = large_diff_high_random_terms - 1;
-                high_coefficients[static_cast<std::size_t>(fallback_term)] = high_coefficients[0];
-                high_sum = high_coefficients[0] + high_coefficients[static_cast<std::size_t>(fallback_term)];
-            }
-
-            for (std::ptrdiff_t term = 0; term < large_diff_high_random_terms; ++term) {
-                REAL p_value = signed_scaled_power<REAL>(large_diff_exponents<REAL>::p,
-                                                         A::one(),
-                                                         high_coefficients[static_cast<std::size_t>(term)]);
-                left[static_cast<std::size_t>(row * k + base + term)] = p_value;
-            }
-            REAL correction_coeff = -high_sum;
-            REAL correction_value = signed_scaled_power<REAL>(large_diff_exponents<REAL>::p,
-                                                              A::one(),
-                                                              correction_coeff);
-            left[static_cast<std::size_t>(row * k + base + large_diff_high_correction_offset)] = correction_value;
-
-            REAL h1_scale = random_dyadic_unit<REAL>(&engine);
-            REAL h1_sign = h1_row_sign[static_cast<std::size_t>(row)];
-            REAL h1_value = signed_scaled_power<REAL>(large_diff_exponents<REAL>::h1, h1_sign, h1_scale);
-            left[static_cast<std::size_t>(row * k + base + large_diff_h1_offset)] = h1_value;
-
-            REAL h2_scale = random_dyadic_unit<REAL>(&engine);
-            REAL h2_sign = h2_row_sign[static_cast<std::size_t>(row)];
-            REAL h2_value = signed_scaled_power<REAL>(large_diff_exponents<REAL>::h2, h2_sign, h2_scale);
-            left[static_cast<std::size_t>(row * k + base + large_diff_h2_offset)] = h2_value;
+        for (std::ptrdiff_t pos = 0; pos < k; ++pos) {
+            REAL value = random_rational_value<REAL>(&engine);
+            left.push_back(value);
         }
+    }
+    for (std::ptrdiff_t pos = 0; pos < k; ++pos) {
         for (std::ptrdiff_t col = 0; col < n; ++col) {
-            REAL high_col_scale = random_dyadic_unit<REAL>(&engine);
-            REAL high_col_sign = random_sign<REAL>(&engine);
-            REAL high_col_value = high_col_sign * high_col_scale;
-            for (std::ptrdiff_t term = 0; term < large_diff_high_random_terms; ++term) {
-                right[static_cast<std::size_t>((base + term) * n + col)] = high_col_value;
-            }
-            right[static_cast<std::size_t>((base + large_diff_high_correction_offset) * n + col)] = high_col_value;
-
-            REAL h1_scale = random_dyadic_unit<REAL>(&engine);
-            REAL h1_sign = h1_col_sign[static_cast<std::size_t>(col)];
-            REAL h1_value = h1_sign * h1_scale;
-            right[static_cast<std::size_t>((base + large_diff_h1_offset) * n + col)] = h1_value;
-
-            REAL h2_scale = random_dyadic_unit<REAL>(&engine);
-            REAL h2_sign = h2_col_sign[static_cast<std::size_t>(col)];
-            REAL h2_value = h2_sign * h2_scale;
-            right[static_cast<std::size_t>((base + large_diff_h2_offset) * n + col)] = h2_value;
-        }
-    }
-
-    for (std::ptrdiff_t pos = large_diff_block_width * blocks; pos < k; ++pos) {
-        for (std::ptrdiff_t row = 0; row < m; ++row) {
-            REAL h2_scale = random_dyadic_unit<REAL>(&engine);
-            REAL h2_sign = h2_row_sign[static_cast<std::size_t>(row)];
-            REAL h2_value = signed_scaled_power<REAL>(large_diff_exponents<REAL>::h2, h2_sign, h2_scale);
-            left[static_cast<std::size_t>(row * k + pos)] = h2_value;
-        }
-        for (std::ptrdiff_t col = 0; col < n; ++col) {
-            REAL h2_scale = random_dyadic_unit<REAL>(&engine);
-            REAL h2_sign = h2_col_sign[static_cast<std::size_t>(col)];
-            REAL h2_value = h2_sign * h2_scale;
-            right[static_cast<std::size_t>(pos * n + col)] = h2_value;
+            REAL value = random_rational_value<REAL>(&engine);
+            right.push_back(value);
         }
     }
 }
@@ -511,7 +456,7 @@ void show_tier(const char* tier,
 
     std::vector<REAL> left;
     std::vector<REAL> right;
-    build_random_large_diff_problem<REAL>(opt.m, opt.n, opt.k, tier_seed, left, right);
+    build_random_midpoint_problem<REAL>(opt.m, opt.n, opt.k, tier_seed, left, right);
 
     std::vector<vmplapack::Rmidrad<REAL>> result(static_cast<std::size_t>(opt.m * opt.n));
     vmplapack::VerificationStatus status =
@@ -519,9 +464,14 @@ void show_tier(const char* tier,
 
     bool all_ok = true;
     bool all_covered = true;
+    int midpoint_mismatch_count = 0;
     REAL max_radius = A::zero();
+    std::ptrdiff_t worst_index = 0;
     mpfr_prec_t metric_precision = static_cast<mpfr_prec_t>(std::max(1024L, 4L * A::precision_bits() + 256L));
     mpfrxx::mpfr_class max_midpoint_error = vmplapack::oracle::zero_at(metric_precision);
+    mpfrxx::mpfr_class min_condition = mpfrxx::mpfr_class::with_precision(metric_precision);
+    mpfrxx::mpfr_class max_condition = vmplapack::oracle::zero_at(metric_precision);
+    bool have_condition = false;
     std::vector<mpfrxx::mpfr_class> oracle_midpoints;
     std::vector<mpfrxx::mpfr_class> midpoint_diffs;
     oracle_midpoints.reserve(static_cast<std::size_t>(opt.m * opt.n));
@@ -536,37 +486,55 @@ void show_tier(const char* tier,
             mpfr_prec_t local_precision = ref.precision + static_cast<mpfr_prec_t>(A::precision_bits() + 128L);
             mpfrxx::mpfr_class oracle_mid = interval_midpoint(ref, local_precision);
             oracle_midpoints.push_back(oracle_mid);
-            midpoint_diffs.push_back(midpoint_difference(box, oracle_mid, metric_precision));
+            mpfrxx::mpfr_class sum_abs =
+                vmplapack::oracle::upward_abs_term_sum(opt.k, left.data() + row * opt.k, 1, right.data() + col, opt.n,
+                                                       local_precision);
+            mpfrxx::mpfr_class condition = condition_from_oracle_mid(oracle_mid, sum_abs, local_precision);
+            mpfrxx::mpfr_class condition_metric = vmplapack::oracle::widen_mpfr(condition, metric_precision);
+            if (!have_condition || condition_metric < min_condition) {
+                min_condition = condition_metric;
+            }
+            if (condition_metric > max_condition) {
+                max_condition = condition_metric;
+            }
+            have_condition = true;
+
             if (box.status != vmplapack::Rstatus::ok) {
                 all_ok = false;
             }
             if (!midrad_covers_oracle(box, ref)) {
                 all_covered = false;
             }
-            mpfrxx::mpfr_class abs_diff = abs_midpoint_difference(box, oracle_mid, metric_precision);
-            if (abs_diff > max_midpoint_error) {
-                max_midpoint_error = abs_diff;
+            if (midpoint_differs(box, oracle_mid, metric_precision)) {
+                ++midpoint_mismatch_count;
+            }
+            midpoint_diffs.push_back(midpoint_difference(box, oracle_mid, metric_precision));
+            mpfrxx::mpfr_class error = midpoint_error(box, oracle_mid, metric_precision);
+            if (error > max_midpoint_error) {
+                max_midpoint_error = error;
             }
             if (box.rad > max_radius) {
                 max_radius = box.rad;
+                worst_index = index;
             }
         }
     }
 
-    std::ptrdiff_t blocks = opt.k / large_diff_block_width;
-    std::ptrdiff_t tail = opt.k - large_diff_block_width * blocks;
+    std::ptrdiff_t worst_row = worst_index / opt.n;
+    std::ptrdiff_t worst_col = worst_index % opt.n;
+    const vmplapack::Rmidrad<REAL>& worst = result[static_cast<std::size_t>(worst_index)];
+    REAL worst_lo = lower_display(worst);
+    REAL worst_hi = upper_display(worst);
 
     std::cout << std::setprecision(output_digits<REAL>()) << std::boolalpha;
     std::cout << tier << '\n';
     std::cout << "  problem = A(" << opt.m << "x" << opt.k << ") * B(" << opt.k << "x" << opt.n << "), row-major" << '\n';
-    std::cout << "  construction = random dyadic-uniform high-sum-zero blocks plus h1/h2 terms" << '\n';
-    std::cout << "  exponents p/h1/h2 = " << large_diff_exponents<REAL>::p << "/"
-              << large_diff_exponents<REAL>::h1 << "/" << large_diff_exponents<REAL>::h2 << '\n';
+    std::cout << "  construction = independent seeded signed rational entries" << '\n';
     std::cout << "  seed = " << static_cast<unsigned long long>(tier_seed) << '\n';
-    std::cout << "  high-sum-zero blocks = " << blocks << '\n';
-    std::cout << "  high random terms per block = " << large_diff_high_random_terms << '\n';
-    std::cout << "  tail h2 terms = " << tail << '\n';
-    std::cout << "  dyadic scale bits = " << dyadic_random_bits << '\n';
+    std::cout << "  numerator range = [" << rational_numerator_min << ", "
+              << (rational_numerator_min + rational_numerator_span - 1U) << "]" << '\n';
+    std::cout << "  odd denominator range = [" << rational_denominator_min << ", "
+              << (rational_denominator_min + rational_denominator_span - 1U) << "]" << '\n';
     if (!opt.no_matrices) {
         std::cout << "  A = ";
         print_octave_matrix(opt.m, opt.k, left.data(), opt.k);
@@ -595,9 +563,19 @@ void show_tier(const char* tier,
     std::cout << "  all components ok = " << all_ok << '\n';
     std::cout << "  all oracle intervals covered = " << all_covered << '\n';
     std::cout << std::setprecision(oracle_output_digits());
+    std::cout << "  min measured cond_oro = " << min_condition << '\n';
+    std::cout << "  max measured cond_oro = " << max_condition << '\n';
+    std::cout << "  components with C.mid != oracle midpoint = " << midpoint_mismatch_count << " / " << opt.m * opt.n << '\n';
     std::cout << "  max |C.mid - oracle midpoint| = " << max_midpoint_error << '\n';
     std::cout << std::setprecision(output_digits<REAL>());
     std::cout << "  max radius = " << max_radius << '\n';
+    std::cout << "  worst radius component = C(" << worst_row << "," << worst_col << ")" << '\n';
+    std::cout << "    oracle midpoint = " << std::setprecision(oracle_output_digits())
+              << oracle_midpoints[static_cast<std::size_t>(worst_index)] << '\n';
+    std::cout << std::setprecision(output_digits<REAL>());
+    std::cout << "    mid = " << worst.mid << '\n';
+    std::cout << "    interval = [" << worst_lo << ", " << worst_hi << "]" << '\n';
+    std::cout << "    status = " << status_name(worst.status) << '\n';
 }
 
 } // namespace
