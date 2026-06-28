@@ -209,7 +209,7 @@ actual dot product is finite. `non_finite` and `invalid_input` are not hidden by
 
 ## M13 Verified Solve Contract
 
-M13 freezes the public solve signatures before implementation. Both overloads solve square point
+M13 implements the public solve signatures below. Both overloads solve square point
 systems and return a top-level `VerificationStatus`:
 
 ```cpp
@@ -253,6 +253,24 @@ If `alpha < 1`, `A` is certified nonsingular and each output component for that 
 `{mid = x~_i, rad = rad, status = ok}`. For matrix RHS, `alpha` is shared across columns and `beta`
 / `rad` are per column. The residual `b - A*x~` must be computed accurately using the M12/M4 dot
 infrastructure; a naive residual is not part of the M13 contract.
+
+Current implementation notes:
+
+- The approximate inverse/preconditioner `R` and approximate solution `x~`/`X~` are produced by a
+  local nearest-rounding Gauss-Jordan engine with partial pivoting. This is an untrusted inner engine;
+  vMPLAPACK does not link to MPLAPACK for the certificate.
+- `alpha` is built from component enclosures of `R*A`: each component uses
+  `vRdot_apriori_with_reference_fallback`, then contributes `|delta_ij - mid| + rad` under upward
+  rounding to the row infinity-norm sum.
+- Each residual component `b_i - A_i*x~` is computed from a verified dot enclosure for `A_i*x~` and
+  an outward-rounded subtraction from `b_i`; the implementation does not use a naive residual.
+- `beta` uses the interval residuals via the safe bound `|residual_j| <= |mid_j| + rad_j`, then sums
+  `|R_ij|*(|mid_j| + rad_j)` under upward rounding. The resulting `rad = beta/(1-alpha)` is rounded
+  upward and is shared by all components of that RHS column.
+
+`example_m13_verified_solve` demonstrates all public M13 paths: vector RHS, matrix RHS,
+near-singular-but-certified input, residual display for the returned midpoint, and a singular-looking
+case that correctly reports `Unverified` with `unbounded` boxes.
 
 Boundary and status rules:
 

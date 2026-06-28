@@ -36,6 +36,8 @@ vRdot(n, x, incx, y, incy)
 vRresidual(m, n, A, lda, x, b, out)
 vRgemv_point(m, n, A, lda, x, incx, out)
 vRgemm_point(m, n, k, A, lda, B, ldb, C, ldc)
+vRgesv(n, A, lda, b, incb, x, incx)
+vRgesv(n, nrhs, A, lda, B, ldb, X, ldx)
 ```
 
 For scalar `Rmidrad` components with `status == ok`, the true finite result is guaranteed to be in:
@@ -46,11 +48,12 @@ For scalar `Rmidrad` components with `status == ok`, the true finite result is g
 
 For `status == unbounded`, the certificate is still valid but useless: `rad == +inf`, representing `[-inf,+inf]`. This is used when finite inputs overflow during bound construction. For `status == non_finite`, an input was NaN or Inf, so no finite-real certificate is claimed. For `status == invalid_input`, the arguments violate the verified API boundary rules.
 
-M12 linear-algebra routines return `VerificationStatus` at the operation level: `Verified` means every
+Linear-algebra routines return `VerificationStatus` at the operation level: `Verified` means every
 component box is `ok`; `Unverified` means at least one component is `unbounded` or `non_finite`;
 `InvalidInput` means a boundary-rule violation; `Unsupported` is reserved for future LA modes.
 `vRgemv_point` and `vRgemm_point` use the M12b a-priori component enclosure first and fall back to the
-M12a directed component enclosure when the a-priori bound is unbounded.
+M12a directed component enclosure when the a-priori bound is unbounded. `vRgesv` returns a normwise
+verified enclosure for square point systems when it can certify `||I - R*A||_inf < 1`.
 
 Verification means interval inclusion, not closeness to an MPFR point. Tests compare verified intervals against an MPFR oracle interval `[ref_lo, ref_hi]`.
 
@@ -79,6 +82,12 @@ vRresidual:
   m == 0         -> ok, write nothing
   m > 0, n == 0  -> out[i] = {b[i], 0, ok} for finite b[i]
   m > 0, n > 0   -> A, x, b, out valid and lda >= n required
+
+vRgesv:
+  negative dimensions, bad pointers, bad strides, or bad leading dimensions -> InvalidInput
+  n == 0, or matrix-RHS nrhs == 0 -> Verified, write nothing
+  non-finite A or RHS input -> Unverified with non_finite boxes
+  failed nonsingularity/bound certificate -> Unverified with unbounded boxes
 ```
 
 `vRresidual` computes `r = b - A*x` row by row and returns the worst `Rstatus` by `Rstatus_rank`.
@@ -182,11 +191,13 @@ cmake --build build -j --target \
   example_m12_verified_gemm_midpoint_error \
   example_m12_verified_gemm_highcondition \
   example_m12_verified_gemm_medium_diff
+  example_m13_verified_solve
 
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_midpoint_error --m 4 --n 4 --k 10 --seed 17
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_highcondition --m 5 --n 5 --k 13 --seed 123
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_medium_diff --m 5 --n 5 --k 13 --seed 123
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve
 ```
 
 For quiet smoke runs, pass `--no-matrices` to the random/medium-difference examples:
@@ -257,6 +268,7 @@ example_m12_verified_gemm
 example_m12_verified_gemm_midpoint_error
 example_m12_verified_gemm_highcondition
 example_m12_verified_gemm_medium_diff
+example_m13_verified_solve
 example_m3_oracle_generators
 ```
 
@@ -264,6 +276,8 @@ example_m3_oracle_generators
 high-condition dot per tier. It prints oracle midpoint, condition estimates, errors, radii, statuses,
 and whether verified boxes enclose the oracle interval. `example_m11_residual_worked` shows a small
 `vRresidual` problem with cancellation in one row and prints the row-wise residual boxes.
+`example_m13_verified_solve` tours `vRgesv`: exact vector solve, matrix RHS solve, near-singular
+certified solve, residual of the returned midpoint, and an `Unverified` certificate-failure case.
 
 ## Benchmarks
 

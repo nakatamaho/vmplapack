@@ -50,6 +50,7 @@ add_library(vmplapack
     src/vRdot_apriori.cpp
     src/vRgemm_point.cpp
     src/vRgemv_point.cpp
+    src/vRgesv.cpp
     src/vRresidual.cpp
     src/vRsum.cpp)
 add_library(vmplapack::vmplapack ALIAS vmplapack)
@@ -310,6 +311,18 @@ if(VMPLAPACK_ENABLE_TESTS)
         add_executable(test_Rarith_eft tests/test_Rarith_eft.cpp)
         target_link_libraries(test_Rarith_eft PRIVATE vmplapack::vmplapack)
         add_test(NAME test_Rarith_eft COMMAND test_Rarith_eft)
+
+        add_executable(test_M13_gesv tests/test_M13_gesv.cpp)
+        target_link_libraries(test_M13_gesv PRIVATE vmplapack::vmplapack)
+        add_test(NAME test_M13_gesv_native COMMAND test_M13_gesv)
+        if(VMPLAPACK_ENABLE_MPFR)
+            add_test(NAME test_M13_gesv_mpfr_w53 COMMAND test_M13_gesv)
+            set_tests_properties(test_M13_gesv_mpfr_w53
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")
+            add_test(NAME test_M13_gesv_mpfr_w512 COMMAND test_M13_gesv)
+            set_tests_properties(test_M13_gesv_mpfr_w512
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+        endif()
         if(VMPLAPACK_ENABLE_MPFR)
             add_test(NAME test_runtime_contract_m9_mpfr_w53 COMMAND test_runtime_contract_m9)
             set_tests_properties(test_runtime_contract_m9_mpfr_w53
@@ -441,6 +454,9 @@ if(VMPLAPACK_ENABLE_EXAMPLES)
 
         add_executable(example_m12_verified_gemm_medium_diff examples/example_m12_verified_gemm_medium_diff.cpp)
         target_link_libraries(example_m12_verified_gemm_medium_diff PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_m13_verified_solve examples/example_m13_verified_solve.cpp)
+        target_link_libraries(example_m13_verified_solve PRIVATE vmplapack::vmplapack)
     endif()
 endif()
 
@@ -487,6 +503,11 @@ if(VMPLAPACK_ENABLE_TESTS AND BUILD_TESTING AND VMPLAPACK_ENABLE_MPFR)
     if(TARGET example_m12_verified_gemm_medium_diff)
         add_test(NAME example_m12_verified_gemm_medium_diff COMMAND example_m12_verified_gemm_medium_diff --no-matrices)
         set_tests_properties(example_m12_verified_gemm_medium_diff
+            PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+    endif()
+    if(TARGET example_m13_verified_solve)
+        add_test(NAME example_m13_verified_solve COMMAND example_m13_verified_solve)
+        set_tests_properties(example_m13_verified_solve
             PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
     endif()
     if(TARGET benchmark_m11_core)

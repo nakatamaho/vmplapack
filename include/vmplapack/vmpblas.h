@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 #include <vmplapack/vmplapack_arith.h>
 #include <vmplapack/vmplapack_eft.h>
@@ -76,6 +77,25 @@ VerificationStatus vRgemm_point(std::ptrdiff_t m,
                                 std::ptrdiff_t ldb,
                                 Rmidrad<REAL>* C,
                                 std::ptrdiff_t ldc);
+
+template <class REAL>
+VerificationStatus vRgesv(std::ptrdiff_t n,
+                          const REAL* A,
+                          std::ptrdiff_t lda,
+                          const REAL* b,
+                          std::ptrdiff_t incb,
+                          Rmidrad<REAL>* x,
+                          std::ptrdiff_t incx);
+
+template <class REAL>
+VerificationStatus vRgesv(std::ptrdiff_t n,
+                          std::ptrdiff_t nrhs,
+                          const REAL* A,
+                          std::ptrdiff_t lda,
+                          const REAL* B,
+                          std::ptrdiff_t ldb,
+                          Rmidrad<REAL>* X,
+                          std::ptrdiff_t ldx);
 
 template <class REAL>
 REAL Rsum(std::ptrdiff_t n, const REAL* x, std::ptrdiff_t incx) {
@@ -335,6 +355,447 @@ REAL Rdot_apriori_radius(std::ptrdiff_t n, REAL mid, REAL S_up) {
     typename A::round_up scope;
     REAL rad = numerator / final_den;
     return rad;
+}
+
+template <class LEFT, class RIGHT>
+bool storage_ranges_overlap(const LEFT* left,
+                            std::ptrdiff_t left_last_index,
+                            const RIGHT* right,
+                            std::ptrdiff_t right_last_index) {
+    if (left == nullptr || right == nullptr || left_last_index < 0 || right_last_index < 0) {
+        return false;
+    }
+    std::uintptr_t left_begin = reinterpret_cast<std::uintptr_t>(left);
+    std::uintptr_t right_begin = reinterpret_cast<std::uintptr_t>(right);
+    std::uintptr_t left_size = static_cast<std::uintptr_t>(left_last_index + 1) * sizeof(LEFT);
+    std::uintptr_t right_size = static_cast<std::uintptr_t>(right_last_index + 1) * sizeof(RIGHT);
+    std::uintptr_t left_end = left_begin + left_size;
+    std::uintptr_t right_end = right_begin + right_size;
+    return left_begin < right_end && right_begin < left_end;
+}
+
+inline std::ptrdiff_t matrix_last_index(std::ptrdiff_t rows, std::ptrdiff_t cols, std::ptrdiff_t ld) {
+    if (rows <= 0 || cols <= 0) {
+        return -1;
+    }
+    return (rows - 1) * ld + (cols - 1);
+}
+
+inline std::ptrdiff_t strided_last_index(std::ptrdiff_t n, std::ptrdiff_t inc) {
+    if (n <= 0) {
+        return -1;
+    }
+    return (n - 1) * inc;
+}
+
+template <class REAL>
+Rmidrad<REAL> status_midrad(Rstatus status) {
+    using A = Rarith<REAL>;
+    if (status == Rstatus::ok) {
+        return {A::zero(), A::zero(), Rstatus::ok};
+    }
+    return {A::zero(), A::infinity(), status};
+}
+
+template <class REAL>
+void fill_strided_boxes(std::ptrdiff_t n, Rmidrad<REAL>* out, std::ptrdiff_t inc, Rstatus status) {
+    Rmidrad<REAL> box = status_midrad<REAL>(status);
+    for (std::ptrdiff_t i = 0; i < n; ++i) {
+        out[i * inc] = box;
+    }
+}
+
+template <class REAL>
+void fill_matrix_boxes(std::ptrdiff_t n, std::ptrdiff_t nrhs, Rmidrad<REAL>* out, std::ptrdiff_t ld, Rstatus status) {
+    Rmidrad<REAL> box = status_midrad<REAL>(status);
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        for (std::ptrdiff_t rhs = 0; rhs < nrhs; ++rhs) {
+            out[row * ld + rhs] = box;
+        }
+    }
+}
+
+template <class REAL>
+bool finite_square_matrix(std::ptrdiff_t n, const REAL* A_data, std::ptrdiff_t lda) {
+    using A = Rarith<REAL>;
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        for (std::ptrdiff_t col = 0; col < n; ++col) {
+            if (!A::is_finite(A_data[row * lda + col])) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+template <class REAL>
+bool finite_rhs_matrix(std::ptrdiff_t n, std::ptrdiff_t nrhs, const REAL* B_data, std::ptrdiff_t ldb) {
+    using A = Rarith<REAL>;
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        for (std::ptrdiff_t rhs = 0; rhs < nrhs; ++rhs) {
+            if (!A::is_finite(B_data[row * ldb + rhs])) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+template <class REAL>
+bool finite_contiguous_matrix(std::ptrdiff_t rows, std::ptrdiff_t cols, const std::vector<REAL>& data) {
+    using A = Rarith<REAL>;
+    for (std::ptrdiff_t row = 0; row < rows; ++row) {
+        for (std::ptrdiff_t col = 0; col < cols; ++col) {
+            if (!A::is_finite(data[static_cast<std::size_t>(row * cols + col)])) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+template <class REAL>
+bool compute_inverse_gauss_jordan(std::ptrdiff_t n,
+                                  const REAL* A_data,
+                                  std::ptrdiff_t lda,
+                                  std::vector<REAL>& inverse) {
+    using A = Rarith<REAL>;
+
+    std::ptrdiff_t width = 2 * n;
+    std::vector<REAL> aug(static_cast<std::size_t>(n * width), A::zero());
+    inverse.assign(static_cast<std::size_t>(n * n), A::zero());
+
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        for (std::ptrdiff_t col = 0; col < n; ++col) {
+            aug[static_cast<std::size_t>(row * width + col)] = A_data[row * lda + col];
+        }
+        aug[static_cast<std::size_t>(row * width + n + row)] = A::one();
+    }
+
+    for (std::ptrdiff_t col = 0; col < n; ++col) {
+        std::ptrdiff_t pivot_row = col;
+        REAL pivot_abs = A::abs(aug[static_cast<std::size_t>(col * width + col)]);
+        for (std::ptrdiff_t row = col + 1; row < n; ++row) {
+            REAL candidate_abs = A::abs(aug[static_cast<std::size_t>(row * width + col)]);
+            if (candidate_abs > pivot_abs) {
+                pivot_abs = candidate_abs;
+                pivot_row = row;
+            }
+        }
+        if (!A::is_finite(pivot_abs) || pivot_abs == A::zero()) {
+            return false;
+        }
+        if (pivot_row != col) {
+            for (std::ptrdiff_t j = 0; j < width; ++j) {
+                REAL tmp = aug[static_cast<std::size_t>(col * width + j)];
+                aug[static_cast<std::size_t>(col * width + j)] = aug[static_cast<std::size_t>(pivot_row * width + j)];
+                aug[static_cast<std::size_t>(pivot_row * width + j)] = tmp;
+            }
+        }
+
+        REAL pivot = aug[static_cast<std::size_t>(col * width + col)];
+        if (!A::is_finite(pivot) || pivot == A::zero()) {
+            return false;
+        }
+        for (std::ptrdiff_t j = 0; j < width; ++j) {
+            REAL normalized = aug[static_cast<std::size_t>(col * width + j)] / pivot;
+            if (!A::is_finite(normalized)) {
+                return false;
+            }
+            aug[static_cast<std::size_t>(col * width + j)] = normalized;
+        }
+
+        for (std::ptrdiff_t row = 0; row < n; ++row) {
+            if (row == col) {
+                continue;
+            }
+            REAL factor = aug[static_cast<std::size_t>(row * width + col)];
+            if (!A::is_finite(factor)) {
+                return false;
+            }
+            if (factor == A::zero()) {
+                continue;
+            }
+            for (std::ptrdiff_t j = 0; j < width; ++j) {
+                REAL scaled = factor * aug[static_cast<std::size_t>(col * width + j)];
+                REAL updated = aug[static_cast<std::size_t>(row * width + j)] - scaled;
+                if (!A::is_finite(updated)) {
+                    return false;
+                }
+                aug[static_cast<std::size_t>(row * width + j)] = updated;
+            }
+        }
+    }
+
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        for (std::ptrdiff_t col = 0; col < n; ++col) {
+            inverse[static_cast<std::size_t>(row * n + col)] = aug[static_cast<std::size_t>(row * width + n + col)];
+        }
+    }
+    return finite_contiguous_matrix(n, n, inverse);
+}
+
+template <class REAL>
+bool compute_solution_from_inverse(std::ptrdiff_t n,
+                                   std::ptrdiff_t nrhs,
+                                   const std::vector<REAL>& inverse,
+                                   const REAL* B_data,
+                                   std::ptrdiff_t ldb,
+                                   std::vector<REAL>& solution) {
+    using A = Rarith<REAL>;
+
+    solution.assign(static_cast<std::size_t>(n * nrhs), A::zero());
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        for (std::ptrdiff_t rhs = 0; rhs < nrhs; ++rhs) {
+            REAL acc = A::zero();
+            for (std::ptrdiff_t col = 0; col < n; ++col) {
+                REAL prod = inverse[static_cast<std::size_t>(row * n + col)] * B_data[col * ldb + rhs];
+                REAL next = acc + prod;
+                acc = next;
+            }
+            if (!A::is_finite(acc)) {
+                return false;
+            }
+            solution[static_cast<std::size_t>(row * nrhs + rhs)] = acc;
+        }
+    }
+    return true;
+}
+
+template <class REAL>
+bool bound_alpha_inverse_residual(std::ptrdiff_t n,
+                                  const std::vector<REAL>& inverse,
+                                  const REAL* A_data,
+                                  std::ptrdiff_t lda,
+                                  REAL& alpha) {
+    using A = Rarith<REAL>;
+
+    alpha = A::zero();
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        REAL row_sum = A::zero();
+        for (std::ptrdiff_t col = 0; col < n; ++col) {
+            Rmidrad<REAL> dot = vRdot_apriori_with_reference_fallback(n,
+                                                                      inverse.data() + row * n,
+                                                                      1,
+                                                                      A_data + col,
+                                                                      lda);
+            if (dot.status != Rstatus::ok || dot.rad < A::zero()) {
+                return false;
+            }
+            REAL delta = (row == col) ? A::one() : A::zero();
+            {
+                typename A::round_up scope;
+                REAL diff = A::zero();
+                if (dot.mid >= delta) {
+                    diff = dot.mid - delta;
+                } else {
+                    diff = delta - dot.mid;
+                }
+                REAL term = diff + dot.rad;
+                REAL next = row_sum + term;
+                row_sum = next;
+            }
+            if (!A::is_finite(row_sum)) {
+                return false;
+            }
+        }
+        if (row_sum > alpha) {
+            alpha = row_sum;
+        }
+    }
+    return A::is_finite(alpha);
+}
+
+template <class REAL>
+Rmidrad<REAL> residual_component_from_dot(std::ptrdiff_t n,
+                                         const REAL* A_row,
+                                         const REAL* x_column,
+                                         std::ptrdiff_t incx,
+                                         REAL rhs) {
+    using A = Rarith<REAL>;
+
+    Rmidrad<REAL> dot = vRdot_apriori_with_reference_fallback(n, A_row, 1, x_column, incx);
+    if (dot.status != Rstatus::ok || dot.rad < A::zero()) {
+        return status_midrad<REAL>(Rstatus::unbounded);
+    }
+
+    REAL dot_lo = A::zero();
+    {
+        typename A::round_down scope;
+        dot_lo = dot.mid - dot.rad;
+    }
+    REAL dot_hi = A::zero();
+    {
+        typename A::round_up scope;
+        dot_hi = dot.mid + dot.rad;
+    }
+
+    REAL lo = A::zero();
+    {
+        typename A::round_down scope;
+        lo = rhs - dot_hi;
+    }
+    REAL hi = A::zero();
+    {
+        typename A::round_up scope;
+        hi = rhs - dot_lo;
+    }
+    REAL mid = rhs - dot.mid;
+    return Rmake_midrad(lo, hi, mid);
+}
+
+template <class REAL>
+bool bound_beta_from_residuals(std::ptrdiff_t n,
+                               const std::vector<REAL>& inverse,
+                               const std::vector<Rmidrad<REAL>>& residuals,
+                               REAL& beta) {
+    using A = Rarith<REAL>;
+
+    std::vector<REAL> residual_abs(static_cast<std::size_t>(n), A::zero());
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        const Rmidrad<REAL>& box = residuals[static_cast<std::size_t>(row)];
+        if (box.status != Rstatus::ok || box.rad < A::zero()) {
+            return false;
+        }
+        {
+            typename A::round_up scope;
+            REAL abs_mid = A::abs(box.mid);
+            REAL bound = abs_mid + box.rad;
+            residual_abs[static_cast<std::size_t>(row)] = bound;
+        }
+        if (!A::is_finite(residual_abs[static_cast<std::size_t>(row)])) {
+            return false;
+        }
+    }
+
+    beta = A::zero();
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        REAL row_sum = A::zero();
+        {
+            typename A::round_up scope;
+            for (std::ptrdiff_t col = 0; col < n; ++col) {
+                REAL coeff_abs = A::abs(inverse[static_cast<std::size_t>(row * n + col)]);
+                REAL prod = coeff_abs * residual_abs[static_cast<std::size_t>(col)];
+                REAL next = row_sum + prod;
+                row_sum = next;
+            }
+        }
+        if (!A::is_finite(row_sum)) {
+            return false;
+        }
+        if (row_sum > beta) {
+            beta = row_sum;
+        }
+    }
+    return A::is_finite(beta);
+}
+
+template <class REAL>
+bool solution_radius_from_alpha_beta(REAL alpha, REAL beta, REAL& radius) {
+    using A = Rarith<REAL>;
+
+    REAL denominator = A::zero();
+    {
+        typename A::round_down scope;
+        denominator = A::one() - alpha;
+    }
+    if (!A::is_finite(denominator) || denominator <= A::zero()) {
+        return false;
+    }
+    {
+        typename A::round_up scope;
+        radius = beta / denominator;
+    }
+    return A::is_finite(radius) && radius >= A::zero();
+}
+
+template <class REAL>
+bool certify_rhs_column(std::ptrdiff_t n,
+                        std::ptrdiff_t nrhs,
+                        std::ptrdiff_t rhs,
+                        const REAL* A_data,
+                        std::ptrdiff_t lda,
+                        const REAL* B_data,
+                        std::ptrdiff_t ldb,
+                        const std::vector<REAL>& inverse,
+                        const std::vector<REAL>& solution,
+                        REAL alpha,
+                        REAL& radius) {
+    using A = Rarith<REAL>;
+
+    std::vector<Rmidrad<REAL>> residuals(static_cast<std::size_t>(n));
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        residuals[static_cast<std::size_t>(row)] = residual_component_from_dot(n,
+                                                                              A_data + row * lda,
+                                                                              solution.data() + rhs,
+                                                                              nrhs,
+                                                                              B_data[row * ldb + rhs]);
+        if (residuals[static_cast<std::size_t>(row)].status != Rstatus::ok) {
+            return false;
+        }
+    }
+
+    REAL beta = A::zero();
+    if (!bound_beta_from_residuals(n, inverse, residuals, beta)) {
+        return false;
+    }
+    if (!solution_radius_from_alpha_beta(alpha, beta, radius)) {
+        return false;
+    }
+    return true;
+}
+
+template <class REAL>
+VerificationStatus vRgesv_matrix_core(std::ptrdiff_t n,
+                                      std::ptrdiff_t nrhs,
+                                      const REAL* A_data,
+                                      std::ptrdiff_t lda,
+                                      const REAL* B_data,
+                                      std::ptrdiff_t ldb,
+                                      Rmidrad<REAL>* X_data,
+                                      std::ptrdiff_t ldx) {
+    using A = Rarith<REAL>;
+
+    if (!finite_square_matrix(n, A_data, lda) || !finite_rhs_matrix(n, nrhs, B_data, ldb)) {
+        fill_matrix_boxes(n, nrhs, X_data, ldx, Rstatus::non_finite);
+        return VerificationStatus::Unverified;
+    }
+
+    std::vector<REAL> inverse;
+    if (!compute_inverse_gauss_jordan(n, A_data, lda, inverse)) {
+        fill_matrix_boxes(n, nrhs, X_data, ldx, Rstatus::unbounded);
+        return VerificationStatus::Unverified;
+    }
+
+    std::vector<REAL> solution;
+    if (!compute_solution_from_inverse(n, nrhs, inverse, B_data, ldb, solution)) {
+        fill_matrix_boxes(n, nrhs, X_data, ldx, Rstatus::unbounded);
+        return VerificationStatus::Unverified;
+    }
+
+    REAL alpha = A::zero();
+    if (!bound_alpha_inverse_residual(n, inverse, A_data, lda, alpha) || !(alpha < A::one())) {
+        fill_matrix_boxes(n, nrhs, X_data, ldx, Rstatus::unbounded);
+        return VerificationStatus::Unverified;
+    }
+
+    for (std::ptrdiff_t rhs = 0; rhs < nrhs; ++rhs) {
+        REAL radius = A::zero();
+        if (!certify_rhs_column(n, nrhs, rhs, A_data, lda, B_data, ldb, inverse, solution, alpha, radius)) {
+            fill_matrix_boxes(n, nrhs, X_data, ldx, Rstatus::unbounded);
+            return VerificationStatus::Unverified;
+        }
+        for (std::ptrdiff_t row = 0; row < n; ++row) {
+            REAL mid = solution[static_cast<std::size_t>(row * nrhs + rhs)];
+            if (!A::is_finite(mid)) {
+                fill_matrix_boxes(n, nrhs, X_data, ldx, Rstatus::unbounded);
+                return VerificationStatus::Unverified;
+            }
+            X_data[row * ldx + rhs] = {mid, radius, Rstatus::ok};
+        }
+    }
+
+    return VerificationStatus::Verified;
 }
 
 } // namespace detail
@@ -655,6 +1116,77 @@ VerificationStatus vRgemm_point(std::ptrdiff_t m,
     return status;
 }
 
+
+template <class REAL>
+VerificationStatus vRgesv(std::ptrdiff_t n,
+                          const REAL* A_data,
+                          std::ptrdiff_t lda,
+                          const REAL* b,
+                          std::ptrdiff_t incb,
+                          Rmidrad<REAL>* x,
+                          std::ptrdiff_t incx) {
+    using A = Rarith<REAL>;
+
+    if (n < 0) {
+        return VerificationStatus::InvalidInput;
+    }
+    if (n == 0) {
+        return VerificationStatus::Verified;
+    }
+    if (A_data == nullptr || b == nullptr || x == nullptr || lda < n || incb < 1 || incx < 1) {
+        return VerificationStatus::InvalidInput;
+    }
+
+    std::ptrdiff_t A_last = detail::matrix_last_index(n, n, lda);
+    std::ptrdiff_t b_last = detail::strided_last_index(n, incb);
+    std::ptrdiff_t x_last = detail::strided_last_index(n, incx);
+    if (detail::storage_ranges_overlap(A_data, A_last, x, x_last) ||
+        detail::storage_ranges_overlap(b, b_last, x, x_last)) {
+        return VerificationStatus::InvalidInput;
+    }
+
+    std::vector<REAL> compact_b(static_cast<std::size_t>(n), A::zero());
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        compact_b[static_cast<std::size_t>(row)] = b[row * incb];
+    }
+    std::vector<Rmidrad<REAL>> compact_x(static_cast<std::size_t>(n));
+    VerificationStatus status = vRgesv(n, 1, A_data, lda, compact_b.data(), 1, compact_x.data(), 1);
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        x[row * incx] = compact_x[static_cast<std::size_t>(row)];
+    }
+    return status;
+}
+
+template <class REAL>
+VerificationStatus vRgesv(std::ptrdiff_t n,
+                          std::ptrdiff_t nrhs,
+                          const REAL* A_data,
+                          std::ptrdiff_t lda,
+                          const REAL* B_data,
+                          std::ptrdiff_t ldb,
+                          Rmidrad<REAL>* X_data,
+                          std::ptrdiff_t ldx) {
+    if (n < 0 || nrhs < 0) {
+        return VerificationStatus::InvalidInput;
+    }
+    if (n == 0 || nrhs == 0) {
+        return VerificationStatus::Verified;
+    }
+    if (A_data == nullptr || B_data == nullptr || X_data == nullptr || lda < n || ldb < nrhs || ldx < nrhs) {
+        return VerificationStatus::InvalidInput;
+    }
+
+    std::ptrdiff_t A_last = detail::matrix_last_index(n, n, lda);
+    std::ptrdiff_t B_last = detail::matrix_last_index(n, nrhs, ldb);
+    std::ptrdiff_t X_last = detail::matrix_last_index(n, nrhs, ldx);
+    if (detail::storage_ranges_overlap(A_data, A_last, X_data, X_last) ||
+        detail::storage_ranges_overlap(B_data, B_last, X_data, X_last)) {
+        return VerificationStatus::InvalidInput;
+    }
+
+    return detail::vRgesv_matrix_core(n, nrhs, A_data, lda, B_data, ldb, X_data, ldx);
+}
+
 extern template float Rsum<float>(std::ptrdiff_t, const float*, std::ptrdiff_t);
 extern template double Rsum<double>(std::ptrdiff_t, const double*, std::ptrdiff_t);
 extern template float Rdot<float>(std::ptrdiff_t, const float*, std::ptrdiff_t, const float*, std::ptrdiff_t);
@@ -729,6 +1261,36 @@ extern template VerificationStatus vRgemm_point<double>(std::ptrdiff_t,
                                                         std::ptrdiff_t,
                                                         Rmidrad<double>*,
                                                         std::ptrdiff_t);
+extern template VerificationStatus vRgesv<float>(std::ptrdiff_t,
+                                                const float*,
+                                                std::ptrdiff_t,
+                                                const float*,
+                                                std::ptrdiff_t,
+                                                Rmidrad<float>*,
+                                                std::ptrdiff_t);
+extern template VerificationStatus vRgesv<double>(std::ptrdiff_t,
+                                                 const double*,
+                                                 std::ptrdiff_t,
+                                                 const double*,
+                                                 std::ptrdiff_t,
+                                                 Rmidrad<double>*,
+                                                 std::ptrdiff_t);
+extern template VerificationStatus vRgesv<float>(std::ptrdiff_t,
+                                                std::ptrdiff_t,
+                                                const float*,
+                                                std::ptrdiff_t,
+                                                const float*,
+                                                std::ptrdiff_t,
+                                                Rmidrad<float>*,
+                                                std::ptrdiff_t);
+extern template VerificationStatus vRgesv<double>(std::ptrdiff_t,
+                                                 std::ptrdiff_t,
+                                                 const double*,
+                                                 std::ptrdiff_t,
+                                                 const double*,
+                                                 std::ptrdiff_t,
+                                                 Rmidrad<double>*,
+                                                 std::ptrdiff_t);
 
 #ifdef VMPLAPACK_ENABLE_MPFR
 extern template mpfrxx::mpfr_class Rsum<mpfrxx::mpfr_class>(std::ptrdiff_t,
@@ -780,6 +1342,21 @@ extern template VerificationStatus vRgemm_point<mpfrxx::mpfr_class>(std::ptrdiff
                                                                     std::ptrdiff_t,
                                                                     Rmidrad<mpfrxx::mpfr_class>*,
                                                                     std::ptrdiff_t);
+extern template VerificationStatus vRgesv<mpfrxx::mpfr_class>(std::ptrdiff_t,
+                                                             const mpfrxx::mpfr_class*,
+                                                             std::ptrdiff_t,
+                                                             const mpfrxx::mpfr_class*,
+                                                             std::ptrdiff_t,
+                                                             Rmidrad<mpfrxx::mpfr_class>*,
+                                                             std::ptrdiff_t);
+extern template VerificationStatus vRgesv<mpfrxx::mpfr_class>(std::ptrdiff_t,
+                                                             std::ptrdiff_t,
+                                                             const mpfrxx::mpfr_class*,
+                                                             std::ptrdiff_t,
+                                                             const mpfrxx::mpfr_class*,
+                                                             std::ptrdiff_t,
+                                                             Rmidrad<mpfrxx::mpfr_class>*,
+                                                             std::ptrdiff_t);
 #endif
 
 } // namespace vmplapack
