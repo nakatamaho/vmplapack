@@ -34,26 +34,31 @@ struct large_diff_exponents;
 template <>
 struct large_diff_exponents<float> {
     static constexpr int p = 100;
-    static constexpr int h1 = 70;
-    static constexpr int h2 = 40;
+    static constexpr int h1 = 40;
+    static constexpr int h2 = 0;
 };
 
 template <>
 struct large_diff_exponents<double> {
     static constexpr int p = 900;
-    static constexpr int h1 = 800;
-    static constexpr int h2 = 700;
+    static constexpr int h1 = 80;
+    static constexpr int h2 = 0;
 };
 
 template <>
 struct large_diff_exponents<mpfrxx::mpfr_class> {
     static constexpr int p = 1800;
-    static constexpr int h1 = 1200;
-    static constexpr int h2 = 600;
+    static constexpr int h1 = 600;
+    static constexpr int h2 = 0;
 };
 
 constexpr unsigned dyadic_random_bits = 10U;
 constexpr unsigned dyadic_random_bins = 1U << dyadic_random_bits;
+constexpr std::ptrdiff_t large_diff_block_width = 5;
+constexpr std::ptrdiff_t large_diff_high_random_terms = 2;
+constexpr std::ptrdiff_t large_diff_h1_offset = large_diff_high_random_terms;
+constexpr std::ptrdiff_t large_diff_h2_offset = large_diff_high_random_terms + 1;
+constexpr std::ptrdiff_t large_diff_high_correction_offset = large_diff_block_width - 1;
 
 options default_options() {
     options opt;
@@ -69,7 +74,7 @@ void print_usage(const char* program) {
     std::cout << "usage: " << program << " [options]\n"
               << "  --m M                  output rows (default 3)\n"
               << "  --n N                  output columns (default 3)\n"
-              << "  --k K                  inner dimension, K >= 4 (default 9)\n"
+              << "  --k K                  inner dimension, K >= 5 (default 9)\n"
               << "  --seed S               random seed (default 29)\n"
               << "  --no-matrices          suppress A, B, C.mid, C.rad, C.diff\n";
 }
@@ -145,8 +150,8 @@ bool parse_options(int argc, char** argv, options* opt) {
 }
 
 bool validate_options(const options& opt) {
-    if (opt.m <= 0 || opt.n <= 0 || opt.k < 4) {
-        std::cerr << "requires --m > 0, --n > 0, and --k >= 4\n";
+    if (opt.m <= 0 || opt.n <= 0 || opt.k < large_diff_block_width) {
+        std::cerr << "requires --m > 0, --n > 0, and --k >= 5\n";
         return false;
     }
     return true;
@@ -324,45 +329,70 @@ void build_random_large_diff_problem(std::ptrdiff_t m,
         h2_col_sign[static_cast<std::size_t>(col)] = random_sign<REAL>(&engine);
     }
 
-    std::ptrdiff_t blocks = k / 4;
+    std::ptrdiff_t blocks = k / large_diff_block_width;
     for (std::ptrdiff_t block = 0; block < blocks; ++block) {
-        std::ptrdiff_t base = 4 * block;
+        std::ptrdiff_t base = large_diff_block_width * block;
         for (std::ptrdiff_t row = 0; row < m; ++row) {
-            REAL p_scale = random_dyadic_unit<REAL>(&engine);
-            REAL p_sign = random_sign<REAL>(&engine);
-            REAL p_value = signed_scaled_power<REAL>(large_diff_exponents<REAL>::p, p_sign, p_scale);
-            REAL neg_p_value = -p_value;
-            left[static_cast<std::size_t>(row * k + base)] = p_value;
-            left[static_cast<std::size_t>(row * k + base + 3)] = neg_p_value;
+            std::vector<REAL> high_coefficients(static_cast<std::size_t>(large_diff_high_random_terms));
+            REAL high_sum = A::zero();
+            for (std::ptrdiff_t term = 0; term < large_diff_high_random_terms; ++term) {
+                REAL coeff_scale = random_dyadic_unit<REAL>(&engine);
+                REAL coeff_sign = random_sign<REAL>(&engine);
+                REAL coeff = coeff_sign * coeff_scale;
+                high_coefficients[static_cast<std::size_t>(term)] = coeff;
+                REAL next_sum = high_sum + coeff;
+                high_sum = next_sum;
+            }
+            if (high_sum == A::zero()) {
+                std::ptrdiff_t fallback_term = large_diff_high_random_terms - 1;
+                high_coefficients[static_cast<std::size_t>(fallback_term)] = high_coefficients[0];
+                high_sum = high_coefficients[0] + high_coefficients[static_cast<std::size_t>(fallback_term)];
+            }
+
+            for (std::ptrdiff_t term = 0; term < large_diff_high_random_terms; ++term) {
+                REAL p_value = signed_scaled_power<REAL>(large_diff_exponents<REAL>::p,
+                                                         A::one(),
+                                                         high_coefficients[static_cast<std::size_t>(term)]);
+                left[static_cast<std::size_t>(row * k + base + term)] = p_value;
+            }
+            REAL correction_coeff = -high_sum;
+            REAL correction_value = signed_scaled_power<REAL>(large_diff_exponents<REAL>::p,
+                                                              A::one(),
+                                                              correction_coeff);
+            left[static_cast<std::size_t>(row * k + base + large_diff_high_correction_offset)] = correction_value;
 
             REAL h1_scale = random_dyadic_unit<REAL>(&engine);
             REAL h1_sign = h1_row_sign[static_cast<std::size_t>(row)];
             REAL h1_value = signed_scaled_power<REAL>(large_diff_exponents<REAL>::h1, h1_sign, h1_scale);
-            left[static_cast<std::size_t>(row * k + base + 1)] = h1_value;
+            left[static_cast<std::size_t>(row * k + base + large_diff_h1_offset)] = h1_value;
 
             REAL h2_scale = random_dyadic_unit<REAL>(&engine);
             REAL h2_sign = h2_row_sign[static_cast<std::size_t>(row)];
             REAL h2_value = signed_scaled_power<REAL>(large_diff_exponents<REAL>::h2, h2_sign, h2_scale);
-            left[static_cast<std::size_t>(row * k + base + 2)] = h2_value;
+            left[static_cast<std::size_t>(row * k + base + large_diff_h2_offset)] = h2_value;
         }
         for (std::ptrdiff_t col = 0; col < n; ++col) {
-            REAL p_scale = random_dyadic_unit<REAL>(&engine);
-            right[static_cast<std::size_t>(base * n + col)] = p_scale;
-            right[static_cast<std::size_t>((base + 3) * n + col)] = p_scale;
+            REAL high_col_scale = random_dyadic_unit<REAL>(&engine);
+            REAL high_col_sign = random_sign<REAL>(&engine);
+            REAL high_col_value = high_col_sign * high_col_scale;
+            for (std::ptrdiff_t term = 0; term < large_diff_high_random_terms; ++term) {
+                right[static_cast<std::size_t>((base + term) * n + col)] = high_col_value;
+            }
+            right[static_cast<std::size_t>((base + large_diff_high_correction_offset) * n + col)] = high_col_value;
 
             REAL h1_scale = random_dyadic_unit<REAL>(&engine);
             REAL h1_sign = h1_col_sign[static_cast<std::size_t>(col)];
             REAL h1_value = h1_sign * h1_scale;
-            right[static_cast<std::size_t>((base + 1) * n + col)] = h1_value;
+            right[static_cast<std::size_t>((base + large_diff_h1_offset) * n + col)] = h1_value;
 
             REAL h2_scale = random_dyadic_unit<REAL>(&engine);
             REAL h2_sign = h2_col_sign[static_cast<std::size_t>(col)];
             REAL h2_value = h2_sign * h2_scale;
-            right[static_cast<std::size_t>((base + 2) * n + col)] = h2_value;
+            right[static_cast<std::size_t>((base + large_diff_h2_offset) * n + col)] = h2_value;
         }
     }
 
-    for (std::ptrdiff_t pos = 4 * blocks; pos < k; ++pos) {
+    for (std::ptrdiff_t pos = large_diff_block_width * blocks; pos < k; ++pos) {
         for (std::ptrdiff_t row = 0; row < m; ++row) {
             REAL h2_scale = random_dyadic_unit<REAL>(&engine);
             REAL h2_sign = h2_row_sign[static_cast<std::size_t>(row)];
@@ -523,17 +553,18 @@ void show_tier(const char* tier,
         }
     }
 
-    std::ptrdiff_t blocks = opt.k / 4;
-    std::ptrdiff_t tail = opt.k - 4 * blocks;
+    std::ptrdiff_t blocks = opt.k / large_diff_block_width;
+    std::ptrdiff_t tail = opt.k - large_diff_block_width * blocks;
 
     std::cout << std::setprecision(output_digits<REAL>()) << std::boolalpha;
     std::cout << tier << '\n';
     std::cout << "  problem = A(" << opt.m << "x" << opt.k << ") * B(" << opt.k << "x" << opt.n << "), row-major" << '\n';
-    std::cout << "  construction = random dyadic-uniform [a*2^p, b*2^h1, c*2^h2, -a*2^p] blocks" << '\n';
+    std::cout << "  construction = random dyadic-uniform high-sum-zero blocks plus h1/h2 terms" << '\n';
     std::cout << "  exponents p/h1/h2 = " << large_diff_exponents<REAL>::p << "/"
               << large_diff_exponents<REAL>::h1 << "/" << large_diff_exponents<REAL>::h2 << '\n';
     std::cout << "  seed = " << static_cast<unsigned long long>(tier_seed) << '\n';
-    std::cout << "  four-term blocks = " << blocks << '\n';
+    std::cout << "  high-sum-zero blocks = " << blocks << '\n';
+    std::cout << "  high random terms per block = " << large_diff_high_random_terms << '\n';
     std::cout << "  tail h2 terms = " << tail << '\n';
     std::cout << "  dyadic scale bits = " << dyadic_random_bits << '\n';
     if (!opt.no_matrices) {
