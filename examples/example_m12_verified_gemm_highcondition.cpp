@@ -35,6 +35,13 @@ struct tier_summary {
     const char* message;
 };
 
+constexpr unsigned dyadic_random_bits = 10U;
+constexpr unsigned dyadic_random_bins = 1U << dyadic_random_bits;
+constexpr unsigned residual_numerator_min = 65U;
+constexpr unsigned residual_numerator_span = 63U;
+constexpr unsigned residual_denominator_min = 129U;
+constexpr unsigned residual_denominator_span = 127U;
+
 options default_options() {
     options opt;
     opt.m = 4;
@@ -296,6 +303,47 @@ REAL ratio_value(int numerator, int denominator) {
 }
 
 template <class REAL>
+REAL random_dyadic_unit(std::mt19937_64* engine) {
+    unsigned bucket = static_cast<unsigned>((*engine)() & static_cast<std::uint64_t>(dyadic_random_bins - 1U));
+    REAL numerator = from_int<REAL>(static_cast<int>(dyadic_random_bins + bucket));
+    REAL denominator = from_int<REAL>(static_cast<int>(2U * dyadic_random_bins));
+    REAL value = numerator / denominator;
+    return value;
+}
+
+template <class REAL>
+REAL random_sign(std::mt19937_64* engine) {
+    REAL one = vmplapack::Rarith<REAL>::one();
+    if (((*engine)() & 1ULL) == 0ULL) {
+        return one;
+    }
+    REAL minus_one = -one;
+    return minus_one;
+}
+
+template <class REAL>
+REAL random_signed_dyadic_unit(std::mt19937_64* engine) {
+    REAL scale = random_dyadic_unit<REAL>(engine);
+    REAL sign = random_sign<REAL>(engine);
+    REAL value = sign * scale;
+    return value;
+}
+
+template <class REAL>
+REAL random_signed_residual(std::mt19937_64* engine) {
+    unsigned raw_numerator =
+        static_cast<unsigned>((*engine)() % static_cast<std::uint64_t>(residual_numerator_span)) + residual_numerator_min;
+    unsigned raw_denominator =
+        static_cast<unsigned>((*engine)() % static_cast<std::uint64_t>(residual_denominator_span)) + residual_denominator_min;
+    int numerator = static_cast<int>(raw_numerator);
+    int denominator = static_cast<int>(raw_denominator | 1U);
+    REAL magnitude = ratio_value<REAL>(numerator, denominator);
+    REAL sign = random_sign<REAL>(engine);
+    REAL value = sign * magnitude;
+    return value;
+}
+
+template <class REAL>
 REAL lower_display(const vmplapack::Rmidrad<REAL>& box) {
     typename vmplapack::Rarith<REAL>::round_down scope;
     REAL lo = box.mid - box.rad;
@@ -417,7 +465,7 @@ tier_summary build_high_condition_gemm(std::ptrdiff_t m,
         return {false, "k is too small for a high-condition construction"};
     }
 
-    int scale = cond_power - ceil_log2_size(static_cast<std::size_t>(4 * pairs));
+    int scale = cond_power - ceil_log2_size(static_cast<std::size_t>(2 * pairs));
     if (scale < min_power_exponent<REAL>() || scale > max_power_exponent<REAL>()) {
         return {false, "requested condition is not representable for this tier"};
     }
@@ -429,42 +477,37 @@ tier_summary build_high_condition_gemm(std::ptrdiff_t m,
     REAL big = power_of_two_value<REAL>(scale);
     std::ptrdiff_t residual_index = 2 * pairs;
 
-    std::vector<REAL> row_scale(static_cast<std::size_t>(m));
-    std::vector<REAL> col_scale(static_cast<std::size_t>(n));
+    std::vector<REAL> row_residual(static_cast<std::size_t>(m));
+    std::vector<REAL> col_residual(static_cast<std::size_t>(n));
     for (std::ptrdiff_t row = 0; row < m; ++row) {
-        int numerator = 3 + static_cast<int>((engine() + static_cast<std::uint64_t>(row)) % 17U);
-        int denominator = 5 + static_cast<int>((engine() + static_cast<std::uint64_t>(row)) % 19U);
-        row_scale[static_cast<std::size_t>(row)] = ratio_value<REAL>(numerator, denominator);
+        row_residual[static_cast<std::size_t>(row)] = random_signed_residual<REAL>(&engine);
     }
     for (std::ptrdiff_t col = 0; col < n; ++col) {
-        int numerator = 4 + static_cast<int>((engine() + static_cast<std::uint64_t>(col)) % 13U);
-        int denominator = 7 + static_cast<int>((engine() + static_cast<std::uint64_t>(col)) % 23U);
-        REAL value = ratio_value<REAL>(numerator, denominator);
-        if ((engine() & 1ULL) != 0ULL) {
-            value = -value;
-        }
-        col_scale[static_cast<std::size_t>(col)] = value;
+        col_residual[static_cast<std::size_t>(col)] = random_signed_residual<REAL>(&engine);
     }
 
     for (std::ptrdiff_t row = 0; row < m; ++row) {
-        REAL scaled_big = row_scale[static_cast<std::size_t>(row)] * big;
         for (std::ptrdiff_t pair = 0; pair < pairs; ++pair) {
-            left[static_cast<std::size_t>(row * k + 2 * pair)] = scaled_big;
-            left[static_cast<std::size_t>(row * k + 2 * pair + 1)] = scaled_big;
+            REAL pair_scale = random_dyadic_unit<REAL>(&engine);
+            REAL high = row_residual[static_cast<std::size_t>(row)] * big;
+            REAL high_scaled = high * pair_scale;
+            left[static_cast<std::size_t>(row * k + 2 * pair)] = high_scaled;
+            left[static_cast<std::size_t>(row * k + 2 * pair + 1)] = high_scaled;
         }
-        left[static_cast<std::size_t>(row * k + residual_index)] = row_scale[static_cast<std::size_t>(row)];
+        left[static_cast<std::size_t>(row * k + residual_index)] = row_residual[static_cast<std::size_t>(row)];
     }
 
     for (std::ptrdiff_t col = 0; col < n; ++col) {
         for (std::ptrdiff_t pair = 0; pair < pairs; ++pair) {
-            bool negative_first = (engine() & 1ULL) != 0ULL;
-            REAL sign = negative_first ? -A::one() : A::one();
-            REAL first = col_scale[static_cast<std::size_t>(col)] * sign;
+            REAL pair_scale = random_dyadic_unit<REAL>(&engine);
+            REAL high_col = col_residual[static_cast<std::size_t>(col)] * pair_scale;
+            REAL sign = random_sign<REAL>(&engine);
+            REAL first = high_col * sign;
             REAL second = -first;
             right[static_cast<std::size_t>((2 * pair) * n + col)] = first;
             right[static_cast<std::size_t>((2 * pair + 1) * n + col)] = second;
         }
-        right[static_cast<std::size_t>(residual_index * n + col)] = col_scale[static_cast<std::size_t>(col)];
+        right[static_cast<std::size_t>(residual_index * n + col)] = col_residual[static_cast<std::size_t>(col)];
     }
 
     *scale_out = scale;
@@ -596,8 +639,14 @@ void show_tier(const char* tier,
     if (!generated.ok) {
         return;
     }
+    std::cout << "  construction = randomized dyadic cancellation pairs plus one residual term" << '\n';
     std::cout << "  cancellation pairs per component = " << pairs << '\n';
     std::cout << "  cancellation scale = 2^" << scale << '\n';
+    std::cout << "  dyadic scale bits = " << dyadic_random_bits << '\n';
+    std::cout << "  residual numerator range = [" << residual_numerator_min << ", "
+              << (residual_numerator_min + residual_numerator_span - 1U) << "]" << '\n';
+    std::cout << "  residual odd denominator range = [" << residual_denominator_min << ", "
+              << (residual_denominator_min + residual_denominator_span - 1U) << "]" << '\n';
 
     std::vector<vmplapack::Rmidrad<REAL>> result(static_cast<std::size_t>(m * n));
     vmplapack::VerificationStatus status =

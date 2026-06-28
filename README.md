@@ -180,12 +180,12 @@ The M12 GEMM examples are useful for inspecting the actual boxes:
 cmake --build build -j --target \
   example_m12_verified_gemm \
   example_m12_verified_gemm_midpoint_error \
-  example_m12_random_high_condition_gemm \
+  example_m12_verified_gemm_highcondition \
   example_m12_verified_gemm_medium_diff
 
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_midpoint_error --m 4 --n 4 --k 10 --seed 17
-MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_random_high_condition_gemm --m 5 --n 5 --k 13 --seed 123
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_highcondition --m 5 --n 5 --k 13 --seed 123
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_medium_diff --m 5 --n 5 --k 13 --seed 123
 ```
 
@@ -193,7 +193,7 @@ For quiet smoke runs, pass `--no-matrices` to the random/medium-difference examp
 
 ```bash
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_midpoint_error --no-matrices
-MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_random_high_condition_gemm --no-matrices
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_highcondition --no-matrices
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_medium_diff --no-matrices
 ```
 
@@ -201,9 +201,15 @@ MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_medium_diff 
 `--m`, `--n`, `--k`, `--seed`, and `--no-matrices`, then fills both point matrices with independent
 seeded signed rational entries. Each entry is `sign * n / d`, with `n` in `[1, 127]` and odd `d` in
 `[65, 255]`, rounded in the active tier. This gives natural-looking small matrices and keeps
-`C.diff = C.mid - oracle midpoint` at ordinary rounding-error scale. Use
-`example_m12_random_high_condition_gemm` when you want condition-targeting options such as `--cond`,
-`--float-cond`, `--double-cond`, and `--mpfr-cond`.
+`C.diff = C.mid - oracle midpoint` at ordinary rounding-error scale.
+
+`example_m12_verified_gemm_highcondition` is the condition-targeting example. It accepts `--cond`,
+`--float-cond`, `--double-cond`, and `--mpfr-cond`. For each cancellation pair, `A` receives the
+same high-magnitude dyadic random value in both pair positions, while `B` receives opposite signed
+dyadic random values in the same two positions. The pair contribution is therefore exactly zero in
+the mathematical dot product, but its absolute term sum is large. One signed rational residual term
+per row/column keeps the exact product nonzero and less hand-picked, so the printed measured
+condition is high while the oracle interval remains meaningful.
 
 Read the output as follows: `return status = Verified` means every component has `Rstatus::ok`;
 `all oracle intervals covered = true` is the MPFR-oracle inclusion check; `result C.rad` is the
@@ -246,7 +252,7 @@ example_m11_dot_driver
 example_m11_residual_worked
 example_m12_verified_gemm
 example_m12_verified_gemm_midpoint_error
-example_m12_random_high_condition_gemm
+example_m12_verified_gemm_highcondition
 example_m12_verified_gemm_medium_diff
 example_m3_oracle_generators
 ```
