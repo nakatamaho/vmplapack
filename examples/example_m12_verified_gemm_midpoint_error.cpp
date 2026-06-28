@@ -525,6 +525,22 @@ void show_tier(const char* tier,
     const vmplapack::Rmidrad<REAL>& worst = result[static_cast<std::size_t>(worst_index)];
     REAL worst_lo = lower_display(worst);
     REAL worst_hi = upper_display(worst);
+    mpfrxx::mpfr_class unit_roundoff = vmplapack::oracle::widen_value(A::unit_roundoff(), metric_precision);
+    mpfrxx::mpfr_class max_midpoint_error_units = mpfrxx::mpfr_class::with_precision(metric_precision);
+    max_midpoint_error_units = max_midpoint_error / unit_roundoff;
+    mpfrxx::mpfr_class max_radius_mp = vmplapack::oracle::widen_value(max_radius, metric_precision);
+    mpfrxx::mpfr_class max_radius_units = mpfrxx::mpfr_class::with_precision(metric_precision);
+    max_radius_units = max_radius_mp / unit_roundoff;
+    mpfrxx::mpfr_class worst_rad_mp = vmplapack::oracle::widen_value(worst.rad, metric_precision);
+    mpfrxx::mpfr_class worst_radius_units = mpfrxx::mpfr_class::with_precision(metric_precision);
+    worst_radius_units = worst_rad_mp / unit_roundoff;
+    mpfrxx::mpfr_class worst_mid_mp = vmplapack::oracle::widen_value(worst.mid, metric_precision);
+    mpfrxx::mpfr_class worst_lo_mp = vmplapack::oracle::widen_value(worst_lo, metric_precision);
+    mpfrxx::mpfr_class worst_hi_mp = vmplapack::oracle::widen_value(worst_hi, metric_precision);
+    mpfrxx::mpfr_class worst_lower_offset = mpfrxx::mpfr_class::with_precision(metric_precision);
+    worst_lower_offset = worst_lo_mp - worst_mid_mp;
+    mpfrxx::mpfr_class worst_upper_offset = mpfrxx::mpfr_class::with_precision(metric_precision);
+    worst_upper_offset = worst_hi_mp - worst_mid_mp;
 
     std::cout << std::setprecision(output_digits<REAL>()) << std::boolalpha;
     std::cout << tier << '\n';
@@ -567,14 +583,24 @@ void show_tier(const char* tier,
     std::cout << "  max measured cond_oro = " << max_condition << '\n';
     std::cout << "  components with C.mid != oracle midpoint = " << midpoint_mismatch_count << " / " << opt.m * opt.n << '\n';
     std::cout << "  max |C.mid - oracle midpoint| = " << max_midpoint_error << '\n';
-    std::cout << std::setprecision(output_digits<REAL>());
+    std::cout << std::scientific << std::setprecision(diff_output_digits());
+    std::cout << "  max |C.mid - oracle midpoint| / u = " << max_midpoint_error_units << '\n';
+    std::cout << std::defaultfloat << std::setprecision(output_digits<REAL>());
     std::cout << "  max radius = " << max_radius << '\n';
+    std::cout << std::scientific << std::setprecision(diff_output_digits());
+    std::cout << "  max radius / u = " << max_radius_units << '\n';
+    std::cout << std::defaultfloat << std::setprecision(output_digits<REAL>());
     std::cout << "  worst radius component = C(" << worst_row << "," << worst_col << ")" << '\n';
     std::cout << "    oracle midpoint = " << std::setprecision(oracle_output_digits())
               << oracle_midpoints[static_cast<std::size_t>(worst_index)] << '\n';
     std::cout << std::setprecision(output_digits<REAL>());
     std::cout << "    mid = " << worst.mid << '\n';
     std::cout << "    interval = [" << worst_lo << ", " << worst_hi << "]" << '\n';
+    std::cout << std::scientific << std::setprecision(diff_output_digits());
+    std::cout << "    lower-mid = " << worst_lower_offset << '\n';
+    std::cout << "    upper-mid = " << worst_upper_offset << '\n';
+    std::cout << "    radius/u = " << worst_radius_units << '\n';
+    std::cout << std::defaultfloat << std::setprecision(output_digits<REAL>());
     std::cout << "    status = " << status_name(worst.status) << '\n';
 }
 

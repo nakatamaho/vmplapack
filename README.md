@@ -214,7 +214,10 @@ condition is high while the oracle interval remains meaningful.
 Read the output as follows: `return status = Verified` means every component has `Rstatus::ok`;
 `all oracle intervals covered = true` is the MPFR-oracle inclusion check; `result C.rad` is the
 verified certificate radius; and `result C.diff` is only the displayed center error
-`C.mid - oracle C midpoint`, not the certificate.
+`C.mid - oracle C midpoint`, not the certificate. The random GEMM diagnostics also print
+`max |C.mid - oracle midpoint| / u`, `max radius / u`, and worst-component `lower-mid` /
+`upper-mid` offsets, so MPFR@512 intervals remain visible even when decimal endpoint printing makes
+`[mid-rad, mid+rad]` look degenerate.
 
 ## Install and Consume
 

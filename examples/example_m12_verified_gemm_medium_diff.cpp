@@ -175,6 +175,20 @@ int diff_output_digits() {
     return 3;
 }
 
+const char* status_name(vmplapack::Rstatus status) {
+    switch (status) {
+        case vmplapack::Rstatus::ok:
+            return "ok";
+        case vmplapack::Rstatus::unbounded:
+            return "unbounded";
+        case vmplapack::Rstatus::non_finite:
+            return "non_finite";
+        case vmplapack::Rstatus::invalid_input:
+            return "invalid_input";
+    }
+    return "invalid_input";
+}
+
 const char* status_name(vmplapack::VerificationStatus status) {
     switch (status) {
         case vmplapack::VerificationStatus::Verified:
@@ -242,6 +256,20 @@ REAL signed_scaled_power(int exponent, REAL sign, REAL scale) {
     REAL scaled = base * scale;
     REAL value = sign * scaled;
     return value;
+}
+
+template <class REAL>
+REAL lower_display(const vmplapack::Rmidrad<REAL>& box) {
+    typename vmplapack::Rarith<REAL>::round_down scope;
+    REAL lo = box.mid - box.rad;
+    return lo;
+}
+
+template <class REAL>
+REAL upper_display(const vmplapack::Rmidrad<REAL>& box) {
+    typename vmplapack::Rarith<REAL>::round_up scope;
+    REAL hi = box.mid + box.rad;
+    return hi;
 }
 
 mpfrxx::mpfr_class interval_midpoint(const vmplapack::oracle::Rdot_interval& interval,
@@ -520,6 +548,7 @@ void show_tier(const char* tier,
     bool all_ok = true;
     bool all_covered = true;
     REAL max_radius = A::zero();
+    std::ptrdiff_t worst_index = 0;
     mpfr_prec_t metric_precision = static_cast<mpfr_prec_t>(std::max(1024L, 4L * A::precision_bits() + 256L));
     mpfrxx::mpfr_class max_midpoint_error = vmplapack::oracle::zero_at(metric_precision);
     std::vector<mpfrxx::mpfr_class> oracle_midpoints;
@@ -549,9 +578,32 @@ void show_tier(const char* tier,
             }
             if (box.rad > max_radius) {
                 max_radius = box.rad;
+                worst_index = index;
             }
         }
     }
+
+    std::ptrdiff_t worst_row = worst_index / opt.n;
+    std::ptrdiff_t worst_col = worst_index % opt.n;
+    const vmplapack::Rmidrad<REAL>& worst = result[static_cast<std::size_t>(worst_index)];
+    REAL worst_lo = lower_display(worst);
+    REAL worst_hi = upper_display(worst);
+    mpfrxx::mpfr_class unit_roundoff = vmplapack::oracle::widen_value(A::unit_roundoff(), metric_precision);
+    mpfrxx::mpfr_class max_midpoint_error_units = mpfrxx::mpfr_class::with_precision(metric_precision);
+    max_midpoint_error_units = max_midpoint_error / unit_roundoff;
+    mpfrxx::mpfr_class max_radius_mp = vmplapack::oracle::widen_value(max_radius, metric_precision);
+    mpfrxx::mpfr_class max_radius_units = mpfrxx::mpfr_class::with_precision(metric_precision);
+    max_radius_units = max_radius_mp / unit_roundoff;
+    mpfrxx::mpfr_class worst_rad_mp = vmplapack::oracle::widen_value(worst.rad, metric_precision);
+    mpfrxx::mpfr_class worst_radius_units = mpfrxx::mpfr_class::with_precision(metric_precision);
+    worst_radius_units = worst_rad_mp / unit_roundoff;
+    mpfrxx::mpfr_class worst_mid_mp = vmplapack::oracle::widen_value(worst.mid, metric_precision);
+    mpfrxx::mpfr_class worst_lo_mp = vmplapack::oracle::widen_value(worst_lo, metric_precision);
+    mpfrxx::mpfr_class worst_hi_mp = vmplapack::oracle::widen_value(worst_hi, metric_precision);
+    mpfrxx::mpfr_class worst_lower_offset = mpfrxx::mpfr_class::with_precision(metric_precision);
+    worst_lower_offset = worst_lo_mp - worst_mid_mp;
+    mpfrxx::mpfr_class worst_upper_offset = mpfrxx::mpfr_class::with_precision(metric_precision);
+    worst_upper_offset = worst_hi_mp - worst_mid_mp;
 
     std::ptrdiff_t blocks = opt.k / medium_diff_block_width;
     std::ptrdiff_t tail = opt.k - medium_diff_block_width * blocks;
@@ -596,8 +648,22 @@ void show_tier(const char* tier,
     std::cout << "  all oracle intervals covered = " << all_covered << '\n';
     std::cout << std::setprecision(oracle_output_digits());
     std::cout << "  max |C.mid - oracle midpoint| = " << max_midpoint_error << '\n';
-    std::cout << std::setprecision(output_digits<REAL>());
+    std::cout << std::scientific << std::setprecision(diff_output_digits());
+    std::cout << "  max |C.mid - oracle midpoint| / u = " << max_midpoint_error_units << '\n';
+    std::cout << std::defaultfloat << std::setprecision(output_digits<REAL>());
     std::cout << "  max radius = " << max_radius << '\n';
+    std::cout << std::scientific << std::setprecision(diff_output_digits());
+    std::cout << "  max radius / u = " << max_radius_units << '\n';
+    std::cout << std::defaultfloat << std::setprecision(output_digits<REAL>());
+    std::cout << "  worst radius component = C(" << worst_row << "," << worst_col << ")" << '\n';
+    std::cout << "    mid = " << worst.mid << '\n';
+    std::cout << "    interval = [" << worst_lo << ", " << worst_hi << "]" << '\n';
+    std::cout << std::scientific << std::setprecision(diff_output_digits());
+    std::cout << "    lower-mid = " << worst_lower_offset << '\n';
+    std::cout << "    upper-mid = " << worst_upper_offset << '\n';
+    std::cout << "    radius/u = " << worst_radius_units << '\n';
+    std::cout << std::defaultfloat << std::setprecision(output_digits<REAL>());
+    std::cout << "    status = " << status_name(worst.status) << '\n';
 }
 
 } // namespace
