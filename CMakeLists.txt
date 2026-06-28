@@ -432,6 +432,9 @@ if(VMPLAPACK_ENABLE_EXAMPLES)
 
         add_executable(example_m12_verified_gemm examples/example_m12_verified_gemm.cpp)
         target_link_libraries(example_m12_verified_gemm PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_m12_verified_gemm_summary examples/example_m12_verified_gemm_summary.cpp)
+        target_link_libraries(example_m12_verified_gemm_summary PRIVATE vmplapack::vmplapack)
     endif()
 endif()
 
@@ -463,6 +466,11 @@ if(VMPLAPACK_ENABLE_TESTS AND BUILD_TESTING AND VMPLAPACK_ENABLE_MPFR)
     if(TARGET example_m12_verified_gemm)
         add_test(NAME example_m12_verified_gemm COMMAND example_m12_verified_gemm)
         set_tests_properties(example_m12_verified_gemm
+            PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+    endif()
+    if(TARGET example_m12_verified_gemm_summary)
+        add_test(NAME example_m12_verified_gemm_summary COMMAND example_m12_verified_gemm_summary)
+        set_tests_properties(example_m12_verified_gemm_summary
             PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
     endif()
     if(TARGET benchmark_m11_core)
