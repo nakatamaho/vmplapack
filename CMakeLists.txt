@@ -485,7 +485,7 @@ if(VMPLAPACK_ENABLE_TESTS AND BUILD_TESTING AND VMPLAPACK_ENABLE_MPFR)
             PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
     endif()
     if(TARGET example_m12_verified_gemm_large_diff)
-        add_test(NAME example_m12_verified_gemm_large_diff COMMAND example_m12_verified_gemm_large_diff)
+        add_test(NAME example_m12_verified_gemm_large_diff COMMAND example_m12_verified_gemm_large_diff --no-matrices)
         set_tests_properties(example_m12_verified_gemm_large_diff
             PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
     endif()
