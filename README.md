@@ -183,21 +183,27 @@ layout, boundary rules, `k == 0`, invalid inputs, and oracle inclusion. `test_M1
 checks the fast a-priori component enclosure, cancellation-heavy components, fallback behavior, and
 that the fast path is tighter than the directed reference where expected.
 
-The M12 GEMM examples are useful for inspecting the actual boxes:
+The M12/M13 linear-algebra examples are useful for inspecting the actual boxes:
 
 ```bash
 cmake --build build -j --target \
   example_m12_verified_gemm \
   example_m12_verified_gemm_midpoint_error \
   example_m12_verified_gemm_highcondition \
-  example_m12_verified_gemm_medium_diff
-  example_m13_verified_solve
+  example_m12_verified_gemm_medium_diff \
+  example_m13_verified_solve \
+  example_m13_verified_solve_condition_sweep \
+  example_m13_verified_solve_random \
+  example_m13_verified_solve_hilbert
 
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_midpoint_error --m 4 --n 4 --k 10 --seed 17
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_highcondition --m 5 --n 5 --k 13 --seed 123
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_medium_diff --m 5 --n 5 --k 13 --seed 123
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve_condition_sweep
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve_random --n 6 --seed 123
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve_hilbert --n 30
 ```
 
 For quiet smoke runs, pass `--no-matrices` to the random/medium-difference examples:
@@ -206,6 +212,10 @@ For quiet smoke runs, pass `--no-matrices` to the random/medium-difference examp
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_midpoint_error --no-matrices
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_highcondition --no-matrices
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_medium_diff --no-matrices
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve_random --n 6 --seed 123 --no-matrices
+MPFRXX_DEFAULT_PRECISION_BITS=128 ./build/example_m13_verified_solve_random --n 32 --seed 123 --no-matrices
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve_hilbert --n 30 --no-matrices
+MPFRXX_DEFAULT_PRECISION_BITS=128 ./build/example_m13_verified_solve_hilbert --n 20 --no-matrices
 ```
 
 `example_m12_verified_gemm_midpoint_error` is intentionally not a high-condition generator. It uses
@@ -269,6 +279,9 @@ example_m12_verified_gemm_midpoint_error
 example_m12_verified_gemm_highcondition
 example_m12_verified_gemm_medium_diff
 example_m13_verified_solve
+example_m13_verified_solve_condition_sweep
+example_m13_verified_solve_random
+example_m13_verified_solve_hilbert
 example_m3_oracle_generators
 ```
 
@@ -278,6 +291,19 @@ and whether verified boxes enclose the oracle interval. `example_m11_residual_wo
 `vRresidual` problem with cancellation in one row and prints the row-wise residual boxes.
 `example_m13_verified_solve` tours `vRgesv`: exact vector solve, matrix RHS solve, near-singular
 certified solve, residual of the returned midpoint, and an `Unverified` certificate-failure case.
+`example_m13_verified_solve_condition_sweep` sweeps the gap in a 2x2 near-singular system to show
+where the stored point matrix stops being certifiable. `example_m13_verified_solve_random` builds a
+random strictly diagonally dominant integer system with known exact solution and reports coverage,
+midpoint error, and radius scale. `example_m13_verified_solve_hilbert` uses Hilbert matrices to show
+larger midpoint drift and radii on a classical ill-conditioned family. Both examples accept any
+`--n >= 1`; large `n` is intentionally allowed for MPFR experiments, but the dense solve and
+certificate work scale cubically and the random example stores an `n` by `n` matrix. The random and
+Hilbert solve examples default the MPFR tier to 512 bits and follow
+`MPFRXX_DEFAULT_PRECISION_BITS`, so
+`MPFRXX_DEFAULT_PRECISION_BITS=128 ./build/example_m13_verified_solve_random --n 32 --seed 123 --no-matrices`
+and
+`MPFRXX_DEFAULT_PRECISION_BITS=128 ./build/example_m13_verified_solve_hilbert --n 20 --no-matrices`
+are useful low-precision stress runs.
 
 ## Benchmarks
 

@@ -457,6 +457,15 @@ if(VMPLAPACK_ENABLE_EXAMPLES)
 
         add_executable(example_m13_verified_solve examples/example_m13_verified_solve.cpp)
         target_link_libraries(example_m13_verified_solve PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_m13_verified_solve_condition_sweep examples/example_m13_verified_solve_condition_sweep.cpp)
+        target_link_libraries(example_m13_verified_solve_condition_sweep PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_m13_verified_solve_random examples/example_m13_verified_solve_random.cpp)
+        target_link_libraries(example_m13_verified_solve_random PRIVATE vmplapack::vmplapack)
+
+        add_executable(example_m13_verified_solve_hilbert examples/example_m13_verified_solve_hilbert.cpp)
+        target_link_libraries(example_m13_verified_solve_hilbert PRIVATE vmplapack::vmplapack)
     endif()
 endif()
 
@@ -508,6 +517,21 @@ if(VMPLAPACK_ENABLE_TESTS AND BUILD_TESTING AND VMPLAPACK_ENABLE_MPFR)
     if(TARGET example_m13_verified_solve)
         add_test(NAME example_m13_verified_solve COMMAND example_m13_verified_solve)
         set_tests_properties(example_m13_verified_solve
+            PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+    endif()
+    if(TARGET example_m13_verified_solve_condition_sweep)
+        add_test(NAME example_m13_verified_solve_condition_sweep COMMAND example_m13_verified_solve_condition_sweep)
+        set_tests_properties(example_m13_verified_solve_condition_sweep
+            PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+    endif()
+    if(TARGET example_m13_verified_solve_random)
+        add_test(NAME example_m13_verified_solve_random COMMAND example_m13_verified_solve_random --n 4 --no-matrices)
+        set_tests_properties(example_m13_verified_solve_random
+            PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+    endif()
+    if(TARGET example_m13_verified_solve_hilbert)
+        add_test(NAME example_m13_verified_solve_hilbert COMMAND example_m13_verified_solve_hilbert --n 8 --no-matrices)
+        set_tests_properties(example_m13_verified_solve_hilbert
             PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
     endif()
     if(TARGET benchmark_m11_core)

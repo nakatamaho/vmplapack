@@ -270,7 +270,16 @@ Current implementation notes:
 
 `example_m13_verified_solve` demonstrates all public M13 paths: vector RHS, matrix RHS,
 near-singular-but-certified input, residual display for the returned midpoint, and a singular-looking
-case that correctly reports `Unverified` with `unbounded` boxes.
+case that correctly reports `Unverified` with `unbounded` boxes. `example_m13_verified_solve_condition_sweep`
+varies a 2x2 near-singular gap across each tier's precision boundary. `example_m13_verified_solve_random`
+constructs a random strictly diagonally dominant integer system with a known exact solution.
+`example_m13_verified_solve_hilbert` uses a Hilbert point matrix and a seeded integer solution vector
+shape to display midpoint drift, residual boxes, and certificate radii for a harder classical family.
+The random and Hilbert examples accept any `--n >= 1` so MPFR runs can push beyond the small native
+smoke sizes; large orders are expensive because the dense solve and verification work scale cubically,
+and the random example stores an `n` by `n` matrix. The random and Hilbert solve examples default the
+MPFR tier to 512 bits and follow
+`MPFRXX_DEFAULT_PRECISION_BITS` for lower-precision stress runs.
 
 Boundary and status rules:
 
