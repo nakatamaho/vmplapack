@@ -35,6 +35,10 @@ int oracle_output_digits() {
     return 24;
 }
 
+int diff_output_digits() {
+    return 3;
+}
+
 const char* status_name(vmplapack::Rstatus status) {
     switch (status) {
         case vmplapack::Rstatus::ok:
@@ -162,6 +166,17 @@ mpfrxx::mpfr_class midpoint_error(const vmplapack::Rmidrad<REAL>& box,
     diff = mid - ref;
     mpfrxx::mpfr_class abs_diff = vmplapack::oracle::abs_at(diff, precision);
     return abs_diff;
+}
+
+template <class REAL>
+mpfrxx::mpfr_class midpoint_difference(const vmplapack::Rmidrad<REAL>& box,
+                                       const mpfrxx::mpfr_class& oracle_mid,
+                                       mpfr_prec_t precision) {
+    mpfrxx::mpfr_class mid = vmplapack::oracle::widen_value(box.mid, precision);
+    mpfrxx::mpfr_class ref = vmplapack::oracle::widen_mpfr(oracle_mid, precision);
+    mpfrxx::mpfr_class diff = mpfrxx::mpfr_class::with_precision(precision);
+    diff = mid - ref;
+    return diff;
 }
 
 template <class REAL>
@@ -350,6 +365,8 @@ void show_tier(const char* tier, int exponent) {
     REAL max_radius = A::zero();
     mpfr_prec_t error_precision = static_cast<mpfr_prec_t>(std::max(1024L, 4L * A::precision_bits() + 256L));
     mpfrxx::mpfr_class max_midpoint_error = vmplapack::oracle::zero_at(error_precision);
+    std::vector<mpfrxx::mpfr_class> midpoint_diffs;
+    midpoint_diffs.reserve(static_cast<std::size_t>(rows * cols));
     std::ptrdiff_t worst_index = 0;
     for (std::ptrdiff_t i = 0; i < rows * cols; ++i) {
         const vmplapack::Rmidrad<REAL>& box = result[static_cast<std::size_t>(i)];
@@ -364,6 +381,7 @@ void show_tier(const char* tier, int exponent) {
         if (midpoint_differs(box, oracle_mid, error_precision)) {
             ++midpoint_mismatch_count;
         }
+        midpoint_diffs.push_back(midpoint_difference(box, oracle_mid, error_precision));
         mpfrxx::mpfr_class error = midpoint_error(box, oracle_mid, error_precision);
         if (error > max_midpoint_error) {
             max_midpoint_error = error;
@@ -401,6 +419,11 @@ void show_tier(const char* tier, int exponent) {
     std::cout << "  result C.rad = ";
     print_rad_matrix(rows, cols, result, cols);
     std::cout << '\n';
+    std::cout << "  result C.diff = ";
+    std::cout << std::scientific << std::setprecision(diff_output_digits());
+    print_mpfr_matrix(rows, cols, midpoint_diffs, cols);
+    std::cout << '\n';
+    std::cout << std::defaultfloat << std::setprecision(output_digits<REAL>());
     std::cout << "  return status = " << status_name(status) << '\n';
     std::cout << "  all components ok = " << all_ok << '\n';
     std::cout << "  all oracle intervals covered = " << all_covered << '\n';
