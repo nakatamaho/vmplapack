@@ -293,6 +293,47 @@ alpha < 1 and all requested boxes ok                            Verified
 
 `Unverified` is only a failed certificate. It is never a claim that `A` is singular.
 
+## M14a Verified Inverse Contract
+
+M14a adds the public inverse signature below:
+
+```cpp
+template <class REAL>
+VerificationStatus vRgeinv(std::ptrdiff_t n,
+                           const REAL* A,
+                           std::ptrdiff_t lda,
+                           Rmidrad<REAL>* Ainv,
+                           std::ptrdiff_t ldinv);
+```
+
+Storage is row-major and all leading dimensions are measured in scalar elements. `A` is `n x n` with
+`A[i*lda+j]` and `lda >= n`. `Ainv[i*ldinv+j]` is the output enclosure for inverse component
+`(A^{-1})_ij`, with `ldinv >= n`. Input and output ranges must not overlap.
+
+The routine builds an exact identity RHS in the active tier and delegates to the M13 matrix-RHS solve
+certificate for `A*X = I`. Thus it inherits the M13 normwise nonsingularity certificate and status
+meaning: `Verified` means every inverse component is an `ok` enclosure containing the true inverse
+entry; `Unverified` is only a failed certificate and is never a claim that `A` is singular.
+
+Boundary and status rules:
+
+```text
+n < 0, invalid pointers/leading dimensions   InvalidInput
+n == 0                                       Verified, write nothing
+non-finite A input                           Unverified, non_finite boxes
+M13 inverse certificate failure              Unverified, unbounded boxes
+all inverse boxes ok                         Verified
+```
+
+M14a does not implement condition estimates or determinants. Those remain M14b/M14c work.
+`example_m14_verified_inverse` prints inverse midpoint/radius matrices for a regular case and a
+near-singular 2x2 case, then verifies how tightly `A * inverse.mid` encloses the identity.
+`example_m14_verified_inverse_highcondition` builds larger dense symmetric examples as
+`Q * diag(1 ... 2^-p) * Q^T`, with `Q` a deterministic product of signed Householder reflectors.
+The `--n`, `--cond`, `--float-cond`, `--double-cond`, and `--mpfr-cond` options control the matrix
+size and target spectral condition scale `2^p`. This target is construction metadata only; certified
+condition bounds remain M14b work.
+
 ## `vRdot`
 
 Signature:

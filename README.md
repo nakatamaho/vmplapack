@@ -194,7 +194,9 @@ cmake --build build -j --target \
   example_m13_verified_solve \
   example_m13_verified_solve_condition_sweep \
   example_m13_verified_solve_random \
-  example_m13_verified_solve_hilbert
+  example_m13_verified_solve_hilbert \
+  example_m14_verified_inverse \
+  example_m14_verified_inverse_highcondition
 
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m12_verified_gemm_midpoint_error --m 4 --n 4 --k 10 --seed 17
@@ -204,6 +206,8 @@ MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve_condition_sweep
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve_random --n 6 --seed 123
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve_hilbert --n 30
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m14_verified_inverse
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m14_verified_inverse_highcondition --n 20 --float-cond 12 --double-cond 40 --mpfr-cond 180
 ```
 
 For quiet smoke runs, pass `--no-matrices` to the random/medium-difference examples:
@@ -216,6 +220,8 @@ MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve_random --n 
 MPFRXX_DEFAULT_PRECISION_BITS=128 ./build/example_m13_verified_solve_random --n 32 --seed 123 --no-matrices
 MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m13_verified_solve_hilbert --n 30 --no-matrices
 MPFRXX_DEFAULT_PRECISION_BITS=128 ./build/example_m13_verified_solve_hilbert --n 20 --no-matrices
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m14_verified_inverse
+MPFRXX_DEFAULT_PRECISION_BITS=512 ./build/example_m14_verified_inverse_highcondition --n 20 --float-cond 12 --double-cond 40 --mpfr-cond 180
 ```
 
 `example_m12_verified_gemm_midpoint_error` is intentionally not a high-condition generator. It uses
@@ -282,6 +288,8 @@ example_m13_verified_solve
 example_m13_verified_solve_condition_sweep
 example_m13_verified_solve_random
 example_m13_verified_solve_hilbert
+example_m14_verified_inverse
+example_m14_verified_inverse_highcondition
 example_m3_oracle_generators
 ```
 
@@ -303,7 +311,13 @@ Hilbert solve examples default the MPFR tier to 512 bits and follow
 `MPFRXX_DEFAULT_PRECISION_BITS=128 ./build/example_m13_verified_solve_random --n 32 --seed 123 --no-matrices`
 and
 `MPFRXX_DEFAULT_PRECISION_BITS=128 ./build/example_m13_verified_solve_hilbert --n 20 --no-matrices`
-are useful low-precision stress runs.
+are useful low-precision stress runs. `example_m14_verified_inverse` prints verified inverse boxes for a
+regular matrix and a near-singular 2x2 case, plus a verified bound for `A * inverse.mid - I`.
+`example_m14_verified_inverse_highcondition` builds larger dense symmetric point matrices as
+`Q * diag(1 ... 2^-p) * Q^T`, where `Q` is a deterministic product of signed Householder reflectors.
+The command-line `--n`, `--cond`, `--float-cond`, `--double-cond`, and `--mpfr-cond` options control
+the size and target spectral condition scale `2^p`. This is a generator target, not a certified
+condition routine; M14b owns certified condition bounds.
 
 ## Benchmarks
 

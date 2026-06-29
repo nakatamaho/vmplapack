@@ -1124,6 +1124,30 @@ contract in `ROADMAP.md` applies) is specified separately when reached.*
   this is not a claim that `A` is singular. `Verified` means all requested solution components have
   `Rstatus::ok` and the true solution is included.
 
+- **M14a — Verified inverse contract.** Add a row-major point-matrix inverse routine:
+
+  ```cpp
+  template <class REAL>
+  VerificationStatus vRgeinv(std::ptrdiff_t n,
+                             const REAL* A, std::ptrdiff_t lda,
+                             Rmidrad<REAL>* Ainv, std::ptrdiff_t ldinv);
+  ```
+
+  `A` is an `n x n` point matrix indexed `A[i*lda+j]`, with `lda >= n`. `Ainv[i*ldinv+j]` receives
+  an enclosure of `(A^{-1})_ij`, with `ldinv >= n`. Leading dimensions are measured in scalar
+  elements, not bytes. Input and output ranges must not overlap.
+
+  The M14a implementation treats inverse computation as the M13 matrix-RHS problem `A*X = I`: build
+  the identity RHS exactly in the active tier and call the M13 certificate. `Verified` means `A` has
+  been certified nonsingular and every inverse component has `Rstatus::ok` and includes the true
+  inverse entry. `Unverified` is only a failed inverse/nonsingularity certificate; it is not a claim
+  that `A` is singular.
+
+  Boundary rules: negative `n`, null required pointers, `lda < n`, or `ldinv < n` return
+  `InvalidInput`. `n == 0` writes nothing and returns `Verified`. Non-finite input returns
+  `Unverified` and writes `Rstatus::non_finite` boxes for all requested inverse components. If M13
+  certification fails, return `Unverified` and write `unbounded` boxes.
+
 ---
 
 ## Reference

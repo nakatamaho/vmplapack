@@ -98,6 +98,13 @@ VerificationStatus vRgesv(std::ptrdiff_t n,
                           std::ptrdiff_t ldx);
 
 template <class REAL>
+VerificationStatus vRgeinv(std::ptrdiff_t n,
+                           const REAL* A,
+                           std::ptrdiff_t lda,
+                           Rmidrad<REAL>* Ainv,
+                           std::ptrdiff_t ldinv);
+
+template <class REAL>
 REAL Rsum(std::ptrdiff_t n, const REAL* x, std::ptrdiff_t incx) {
     using A = Rarith<REAL>;
 
@@ -1187,6 +1194,38 @@ VerificationStatus vRgesv(std::ptrdiff_t n,
     return detail::vRgesv_matrix_core(n, nrhs, A_data, lda, B_data, ldb, X_data, ldx);
 }
 
+template <class REAL>
+VerificationStatus vRgeinv(std::ptrdiff_t n,
+                           const REAL* A_data,
+                           std::ptrdiff_t lda,
+                           Rmidrad<REAL>* Ainv_data,
+                           std::ptrdiff_t ldinv) {
+    using A = Rarith<REAL>;
+
+    if (n < 0) {
+        return VerificationStatus::InvalidInput;
+    }
+    if (n == 0) {
+        return VerificationStatus::Verified;
+    }
+    if (A_data == nullptr || Ainv_data == nullptr || lda < n || ldinv < n) {
+        return VerificationStatus::InvalidInput;
+    }
+
+    std::ptrdiff_t A_last = detail::matrix_last_index(n, n, lda);
+    std::ptrdiff_t Ainv_last = detail::matrix_last_index(n, n, ldinv);
+    if (detail::storage_ranges_overlap(A_data, A_last, Ainv_data, Ainv_last)) {
+        return VerificationStatus::InvalidInput;
+    }
+
+    std::vector<REAL> identity(static_cast<std::size_t>(n * n), A::zero());
+    for (std::ptrdiff_t i = 0; i < n; ++i) {
+        identity[static_cast<std::size_t>(i * n + i)] = A::one();
+    }
+
+    return vRgesv(n, n, A_data, lda, identity.data(), n, Ainv_data, ldinv);
+}
+
 extern template float Rsum<float>(std::ptrdiff_t, const float*, std::ptrdiff_t);
 extern template double Rsum<double>(std::ptrdiff_t, const double*, std::ptrdiff_t);
 extern template float Rdot<float>(std::ptrdiff_t, const float*, std::ptrdiff_t, const float*, std::ptrdiff_t);
@@ -1291,6 +1330,16 @@ extern template VerificationStatus vRgesv<double>(std::ptrdiff_t,
                                                  std::ptrdiff_t,
                                                  Rmidrad<double>*,
                                                  std::ptrdiff_t);
+extern template VerificationStatus vRgeinv<float>(std::ptrdiff_t,
+                                                  const float*,
+                                                  std::ptrdiff_t,
+                                                  Rmidrad<float>*,
+                                                  std::ptrdiff_t);
+extern template VerificationStatus vRgeinv<double>(std::ptrdiff_t,
+                                                   const double*,
+                                                   std::ptrdiff_t,
+                                                   Rmidrad<double>*,
+                                                   std::ptrdiff_t);
 
 #ifdef VMPLAPACK_ENABLE_MPFR
 extern template mpfrxx::mpfr_class Rsum<mpfrxx::mpfr_class>(std::ptrdiff_t,
@@ -1357,6 +1406,11 @@ extern template VerificationStatus vRgesv<mpfrxx::mpfr_class>(std::ptrdiff_t,
                                                              std::ptrdiff_t,
                                                              Rmidrad<mpfrxx::mpfr_class>*,
                                                              std::ptrdiff_t);
+extern template VerificationStatus vRgeinv<mpfrxx::mpfr_class>(std::ptrdiff_t,
+                                                               const mpfrxx::mpfr_class*,
+                                                               std::ptrdiff_t,
+                                                               Rmidrad<mpfrxx::mpfr_class>*,
+                                                               std::ptrdiff_t);
 #endif
 
 } // namespace vmplapack

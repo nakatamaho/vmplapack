@@ -48,7 +48,7 @@ vMPLAPACK unless a later milestone explicitly changes that dependency policy.
 ## Golden rules (non-negotiable)
 
 1. **Soundness over tightness; correctness over cleverness.**
-2. **Milestone order is law.** Implement strictly M0 → M13 (see `docs/SPEC.md` §14 and `ROADMAP.md`). **One PR per
+2. **Milestone order is law.** Implement strictly M0 → M14 (see `docs/SPEC.md` §14 and `ROADMAP.md`). **One PR per
    milestone.** Do not start a milestone until the previous one's acceptance tests pass.
 3. **Frozen contracts.** Do not change the public signatures, `Rmidrad`/`Rstatus`, the
    `Rarith<REAL>` interface, the EFT preconditions (`SPEC §6`), the boundary rules (`SPEC §8`), or
