@@ -24,7 +24,7 @@ of bounds, NaN-vs-Inf classification, empty/invalid inputs, MPFR fixed-precision
 rounding, condition-aware testing). **These hardening rules are load-bearing for the word
 "verified" ― do not relax them.**
 
-Implement **milestone by milestone (M0 → M12)**, one commit/PR per milestone; do **not** start a
+Implement **milestone by milestone (M0 → M14)**, one commit/PR per milestone; do **not** start a
 milestone until the previous one's acceptance tests pass. If you find a reason to deviate from the
 signatures, `Rmidrad`/`Rstatus`, the `Rarith<REAL>` interface, the preconditions (§6), the
 boundary rules (§8), or the rounding contract (§9), **stop and report** instead of silently
@@ -1147,6 +1147,51 @@ contract in `ROADMAP.md` applies) is specified separately when reached.*
   `InvalidInput`. `n == 0` writes nothing and returns `Verified`. Non-finite input returns
   `Unverified` and writes `Rstatus::non_finite` boxes for all requested inverse components. If M13
   certification fails, return `Unverified` and write `unbounded` boxes.
+
+- **M14b — Certified condition bounds contract.** Add a row-major point-matrix infinity-norm
+  condition-bound routine:
+
+  ```cpp
+  template <class REAL>
+  struct Rcond_bounds {
+      REAL normA_upper;
+      REAL normAinv_upper;
+      REAL kappa_upper;
+      REAL rcond_lower;
+      Rstatus status;
+  };
+
+  template <class REAL>
+  Rcond_bounds<REAL> vRgecon(std::ptrdiff_t n, const REAL* A, std::ptrdiff_t lda);
+  ```
+
+  `A` is an `n x n` point matrix indexed `A[i*lda+j]`, with `lda >= n`. Storage is row-major and
+  leading dimensions are measured in scalar elements. `vRgecon` does not return an exact condition
+  enclosure. For `status == Rstatus::ok`, it returns certified one-sided bounds for the infinity-norm
+  condition number:
+
+  ```text
+  normA_upper    >= ||A||_inf
+  normAinv_upper >= ||A^{-1}||_inf
+  kappa_upper    >= ||A||_inf * ||A^{-1}||_inf
+  rcond_lower    <= 1 / (||A||_inf * ||A^{-1}||_inf)
+  ```
+
+  The implementation obtains a verified inverse enclosure from M14a. `normA_upper` is an
+  upward-rounded row-sum bound of the point input matrix. `normAinv_upper` is an upward-rounded
+  row-sum bound using `|mid_ij| + rad_ij` for each verified inverse component. `kappa_upper` is the
+  upward-rounded product of these two bounds, and `rcond_lower` is the downward-rounded reciprocal of
+  `kappa_upper`. Thus a large `kappa_upper` may be pessimistic; it is still a sound upper bound when
+  `status == ok`.
+
+  Boundary and status rules: negative `n`, null `A` for `n > 0`, or `lda < n` return a result with
+  `status == Rstatus::invalid_input`. `n == 0` returns the empty-matrix convention
+  `{normA_upper=0, normAinv_upper=0, kappa_upper=1, rcond_lower=1, status=ok}`. Non-finite input
+  returns `status == Rstatus::non_finite` and claims no finite-real certificate. If the inverse
+  certificate fails, an upward norm overflows, or the condition product/reciprocal cannot be bounded
+  finitely, return `status == Rstatus::unbounded` with `kappa_upper=+inf` and `rcond_lower=0`.
+
+  M14b does not implement determinants. M14c remains a separate determinant-specific algorithm.
 
 ---
 

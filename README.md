@@ -38,6 +38,8 @@ vRgemv_point(m, n, A, lda, x, incx, out)
 vRgemm_point(m, n, k, A, lda, B, ldb, C, ldc)
 vRgesv(n, A, lda, b, incb, x, incx)
 vRgesv(n, nrhs, A, lda, B, ldb, X, ldx)
+vRgeinv(n, A, lda, Ainv, ldinv)
+vRgecon(n, A, lda)
 ```
 
 For scalar `Rmidrad` components with `status == ok`, the true finite result is guaranteed to be in:
@@ -53,12 +55,12 @@ component box is `ok`; `Unverified` means at least one component is `unbounded` 
 `InvalidInput` means a boundary-rule violation; `Unsupported` is reserved for future LA modes.
 `vRgemv_point` and `vRgemm_point` use the M12b a-priori component enclosure first and fall back to the
 M12a directed component enclosure when the a-priori bound is unbounded. `vRgesv` returns a normwise
-verified enclosure for square point systems when it can certify `||I - R*A||_inf < 1`.
+verified enclosure for square point systems when it can certify `||I - R*A||_inf < 1`. `vRgeinv` returns verified inverse boxes. `vRgecon` returns certified infinity-norm condition diagnostics: an upper bound on `||A||_inf * ||A^{-1}||_inf` and a lower bound on the reciprocal condition, not an exact condition enclosure.
 
 Verification means interval inclusion, not closeness to an MPFR point. Tests compare verified intervals against an MPFR oracle interval `[ref_lo, ref_hi]`.
 
-See `ROUTINES.md` for the user-facing behavior of `vRdot` and `vRdot_apriori`, including how to
-interpret `mid`, `rad`, and `status`.
+See `ROUTINES.md` for the user-facing behavior of `vRdot`, `vRdot_apriori`, and `vRgecon`, including how to
+interpret `mid`, `rad`, scalar condition bounds, and status values.
 
 ## Boundary Rules
 
@@ -317,7 +319,7 @@ regular matrix and a near-singular 2x2 case, plus a verified bound for `A * inve
 `Q * diag(1 ... 2^-p) * Q^T`, where `Q` is a deterministic product of signed Householder reflectors.
 The command-line `--n`, `--cond`, `--float-cond`, `--double-cond`, and `--mpfr-cond` options control
 the size and target spectral condition scale `2^p`. This is a generator target, not a certified
-condition routine; M14b owns certified condition bounds.
+condition routine; use `vRgecon` for certified infinity-norm condition bounds.
 
 ## Benchmarks
 

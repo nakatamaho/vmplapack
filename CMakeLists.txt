@@ -52,6 +52,7 @@ add_library(vmplapack
     src/vRgemv_point.cpp
     src/vRgesv.cpp
     src/vRgeinv.cpp
+    src/vRgecon.cpp
     src/vRresidual.cpp
     src/vRsum.cpp)
 add_library(vmplapack::vmplapack ALIAS vmplapack)
@@ -334,6 +335,18 @@ if(VMPLAPACK_ENABLE_TESTS)
                 PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")
             add_test(NAME test_M14_inverse_mpfr_w512 COMMAND test_M14_inverse)
             set_tests_properties(test_M14_inverse_mpfr_w512
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
+        endif()
+
+        add_executable(test_M14_condition tests/test_M14_condition.cpp)
+        target_link_libraries(test_M14_condition PRIVATE vmplapack::vmplapack)
+        add_test(NAME test_M14_condition_native COMMAND test_M14_condition)
+        if(VMPLAPACK_ENABLE_MPFR)
+            add_test(NAME test_M14_condition_mpfr_w53 COMMAND test_M14_condition)
+            set_tests_properties(test_M14_condition_mpfr_w53
+                PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=53")
+            add_test(NAME test_M14_condition_mpfr_w512 COMMAND test_M14_condition)
+            set_tests_properties(test_M14_condition_mpfr_w512
                 PROPERTIES ENVIRONMENT "MPFRXX_DEFAULT_PRECISION_BITS=512")
         endif()
         if(VMPLAPACK_ENABLE_MPFR)

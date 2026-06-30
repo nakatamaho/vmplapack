@@ -105,6 +105,18 @@ VerificationStatus vRgeinv(std::ptrdiff_t n,
                            std::ptrdiff_t ldinv);
 
 template <class REAL>
+struct Rcond_bounds {
+    REAL normA_upper;
+    REAL normAinv_upper;
+    REAL kappa_upper;
+    REAL rcond_lower;
+    Rstatus status;
+};
+
+template <class REAL>
+Rcond_bounds<REAL> vRgecon(std::ptrdiff_t n, const REAL* A, std::ptrdiff_t lda);
+
+template <class REAL>
 REAL Rsum(std::ptrdiff_t n, const REAL* x, std::ptrdiff_t incx) {
     using A = Rarith<REAL>;
 
@@ -433,6 +445,93 @@ bool finite_square_matrix(std::ptrdiff_t n, const REAL* A_data, std::ptrdiff_t l
         }
     }
     return true;
+}
+
+template <class REAL>
+Rcond_bounds<REAL> invalid_cond_bounds() {
+    using A = Rarith<REAL>;
+    return {A::zero(), A::zero(), A::zero(), A::zero(), Rstatus::invalid_input};
+}
+
+template <class REAL>
+Rcond_bounds<REAL> non_finite_cond_bounds() {
+    using A = Rarith<REAL>;
+    return {A::infinity(), A::infinity(), A::infinity(), A::zero(), Rstatus::non_finite};
+}
+
+template <class REAL>
+Rcond_bounds<REAL> unbounded_cond_bounds(REAL normA_upper) {
+    using A = Rarith<REAL>;
+    REAL normA = A::is_finite(normA_upper) ? normA_upper : A::infinity();
+    return {normA, A::infinity(), A::infinity(), A::zero(), Rstatus::unbounded};
+}
+
+template <class REAL>
+Rcond_bounds<REAL> empty_cond_bounds() {
+    using A = Rarith<REAL>;
+    return {A::zero(), A::zero(), A::one(), A::one(), Rstatus::ok};
+}
+
+template <class REAL>
+bool infinity_norm_point_upper(std::ptrdiff_t n, const REAL* A_data, std::ptrdiff_t lda, REAL& norm_upper) {
+    using A = Rarith<REAL>;
+
+    norm_upper = A::zero();
+    typename A::round_up scope;
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        REAL row_sum = A::zero();
+        for (std::ptrdiff_t col = 0; col < n; ++col) {
+            REAL term = A::abs(A_data[row * lda + col]);
+            REAL next = row_sum + term;
+            row_sum = next;
+        }
+        if (!A::is_finite(row_sum)) {
+            return false;
+        }
+        if (row_sum > norm_upper) {
+            norm_upper = row_sum;
+        }
+    }
+    return A::is_finite(norm_upper);
+}
+
+template <class REAL>
+Rstatus worst_midrad_matrix_status(std::ptrdiff_t n, const Rmidrad<REAL>* boxes, std::ptrdiff_t ld) {
+    Rstatus worst = Rstatus::ok;
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        for (std::ptrdiff_t col = 0; col < n; ++col) {
+            worst = worst_status(worst, boxes[row * ld + col].status);
+        }
+    }
+    return worst;
+}
+
+template <class REAL>
+bool infinity_norm_midrad_upper(std::ptrdiff_t n, const Rmidrad<REAL>* boxes, std::ptrdiff_t ld, REAL& norm_upper) {
+    using A = Rarith<REAL>;
+
+    norm_upper = A::zero();
+    typename A::round_up scope;
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        REAL row_sum = A::zero();
+        for (std::ptrdiff_t col = 0; col < n; ++col) {
+            const Rmidrad<REAL>& box = boxes[row * ld + col];
+            if (box.status != Rstatus::ok || box.rad < A::zero() || !A::is_finite(box.mid) || !A::is_finite(box.rad)) {
+                return false;
+            }
+            REAL abs_mid = A::abs(box.mid);
+            REAL term = abs_mid + box.rad;
+            REAL next = row_sum + term;
+            row_sum = next;
+        }
+        if (!A::is_finite(row_sum)) {
+            return false;
+        }
+        if (row_sum > norm_upper) {
+            norm_upper = row_sum;
+        }
+    }
+    return A::is_finite(norm_upper);
 }
 
 template <class REAL>
@@ -1226,6 +1325,70 @@ VerificationStatus vRgeinv(std::ptrdiff_t n,
     return vRgesv(n, n, A_data, lda, identity.data(), n, Ainv_data, ldinv);
 }
 
+template <class REAL>
+Rcond_bounds<REAL> vRgecon(std::ptrdiff_t n, const REAL* A_data, std::ptrdiff_t lda) {
+    using A = Rarith<REAL>;
+
+    if (n < 0) {
+        return detail::invalid_cond_bounds<REAL>();
+    }
+    if (n == 0) {
+        return detail::empty_cond_bounds<REAL>();
+    }
+    if (A_data == nullptr || lda < n) {
+        return detail::invalid_cond_bounds<REAL>();
+    }
+    if (!detail::finite_square_matrix(n, A_data, lda)) {
+        return detail::non_finite_cond_bounds<REAL>();
+    }
+
+    REAL normA_upper = A::zero();
+    if (!detail::infinity_norm_point_upper(n, A_data, lda, normA_upper)) {
+        return detail::unbounded_cond_bounds<REAL>(normA_upper);
+    }
+
+    std::vector<Rmidrad<REAL>> Ainv_data(static_cast<std::size_t>(n * n));
+    VerificationStatus inverse_status = vRgeinv(n, A_data, lda, Ainv_data.data(), n);
+    if (inverse_status == VerificationStatus::InvalidInput) {
+        return detail::invalid_cond_bounds<REAL>();
+    }
+    if (inverse_status != VerificationStatus::Verified) {
+        return detail::unbounded_cond_bounds<REAL>(normA_upper);
+    }
+
+    Rstatus inverse_box_status = detail::worst_midrad_matrix_status(n, Ainv_data.data(), n);
+    if (inverse_box_status != Rstatus::ok) {
+        return detail::unbounded_cond_bounds<REAL>(normA_upper);
+    }
+
+    REAL normAinv_upper = A::zero();
+    if (!detail::infinity_norm_midrad_upper(n, Ainv_data.data(), n, normAinv_upper)) {
+        return detail::unbounded_cond_bounds<REAL>(normA_upper);
+    }
+
+    REAL kappa_upper = A::zero();
+    {
+        typename A::round_up scope;
+        REAL product = normA_upper * normAinv_upper;
+        kappa_upper = product;
+    }
+    if (!A::is_finite(kappa_upper) || !(kappa_upper > A::zero())) {
+        return detail::unbounded_cond_bounds<REAL>(normA_upper);
+    }
+
+    REAL rcond_lower = A::zero();
+    {
+        typename A::round_down scope;
+        REAL reciprocal = A::one() / kappa_upper;
+        rcond_lower = reciprocal;
+    }
+    if (!A::is_finite(rcond_lower) || rcond_lower < A::zero()) {
+        return detail::unbounded_cond_bounds<REAL>(normA_upper);
+    }
+
+    return {normA_upper, normAinv_upper, kappa_upper, rcond_lower, Rstatus::ok};
+}
+
 extern template float Rsum<float>(std::ptrdiff_t, const float*, std::ptrdiff_t);
 extern template double Rsum<double>(std::ptrdiff_t, const double*, std::ptrdiff_t);
 extern template float Rdot<float>(std::ptrdiff_t, const float*, std::ptrdiff_t, const float*, std::ptrdiff_t);
@@ -1341,6 +1504,9 @@ extern template VerificationStatus vRgeinv<double>(std::ptrdiff_t,
                                                    Rmidrad<double>*,
                                                    std::ptrdiff_t);
 
+extern template Rcond_bounds<float> vRgecon<float>(std::ptrdiff_t, const float*, std::ptrdiff_t);
+extern template Rcond_bounds<double> vRgecon<double>(std::ptrdiff_t, const double*, std::ptrdiff_t);
+
 #ifdef VMPLAPACK_ENABLE_MPFR
 extern template mpfrxx::mpfr_class Rsum<mpfrxx::mpfr_class>(std::ptrdiff_t,
                                                             const mpfrxx::mpfr_class*,
@@ -1411,6 +1577,9 @@ extern template VerificationStatus vRgeinv<mpfrxx::mpfr_class>(std::ptrdiff_t,
                                                                std::ptrdiff_t,
                                                                Rmidrad<mpfrxx::mpfr_class>*,
                                                                std::ptrdiff_t);
+extern template Rcond_bounds<mpfrxx::mpfr_class> vRgecon<mpfrxx::mpfr_class>(std::ptrdiff_t,
+                                                                            const mpfrxx::mpfr_class*,
+                                                                            std::ptrdiff_t);
 #endif
 
 } // namespace vmplapack

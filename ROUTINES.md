@@ -325,14 +325,68 @@ M13 inverse certificate failure              Unverified, unbounded boxes
 all inverse boxes ok                         Verified
 ```
 
-M14a does not implement condition estimates or determinants. Those remain M14b/M14c work.
+M14a does not implement determinants. M14c remains a separate determinant-specific algorithm.
 `example_m14_verified_inverse` prints inverse midpoint/radius matrices for a regular case and a
 near-singular 2x2 case, then verifies how tightly `A * inverse.mid` encloses the identity.
 `example_m14_verified_inverse_highcondition` builds larger dense symmetric examples as
 `Q * diag(1 ... 2^-p) * Q^T`, with `Q` a deterministic product of signed Householder reflectors.
 The `--n`, `--cond`, `--float-cond`, `--double-cond`, and `--mpfr-cond` options control the matrix
-size and target spectral condition scale `2^p`. This target is construction metadata only; certified
-condition bounds remain M14b work.
+size and target spectral condition scale `2^p`. This target is construction metadata only; use
+`vRgecon` for certified infinity-norm condition bounds.
+
+## M14b Certified Condition Bounds Contract
+
+M14b adds the public result type and routine below:
+
+```cpp
+template <class REAL>
+struct Rcond_bounds {
+    REAL normA_upper;
+    REAL normAinv_upper;
+    REAL kappa_upper;
+    REAL rcond_lower;
+    Rstatus status;
+};
+
+template <class REAL>
+Rcond_bounds<REAL> vRgecon(std::ptrdiff_t n, const REAL* A, std::ptrdiff_t lda);
+```
+
+Storage is row-major. `A` is an `n x n` point matrix with `A[i*lda+j]` and `lda >= n`; leading
+dimensions are measured in scalar elements. The routine returns scalar condition diagnostics, so it
+uses `Rstatus` directly rather than `VerificationStatus`.
+
+For `status == Rstatus::ok`, the fields have this one-sided, certified meaning in the infinity norm:
+
+```text
+normA_upper    >= ||A||_inf
+normAinv_upper >= ||A^{-1}||_inf
+kappa_upper    >= ||A||_inf * ||A^{-1}||_inf
+rcond_lower    <= 1 / (||A||_inf * ||A^{-1}||_inf)
+```
+
+This is not an exact condition-number enclosure. `kappa_upper` can be pessimistic because
+`normAinv_upper` is derived from the verified inverse boxes as `sum_j (|mid_ij| + rad_ij)`, rounded
+upward per row. `rcond_lower` is the downward-rounded reciprocal of `kappa_upper`; it is useful as a
+certified lower bound on the reciprocal condition, not as a best estimate.
+
+Implementation helpers:
+
+```text
+infinity_norm_point_upper   upward row-sum bound for point A
+infinity_norm_midrad_upper  upward row-sum bound for inverse boxes using |mid| + rad
+vRgeinv                     supplies the verified inverse enclosure used by vRgecon
+```
+
+Boundary and status rules:
+
+```text
+n < 0, null A for n > 0, lda < n       invalid_input
+n == 0                                 ok, normA=0, normAinv=0, kappa=1, rcond=1
+non-finite A input                      non_finite, no finite condition certificate
+inverse certificate failure or overflow unbounded, kappa=+inf, rcond=0
+all bounds finite and certified         ok
+```
 
 ## `vRdot`
 
