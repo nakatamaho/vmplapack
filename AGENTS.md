@@ -141,8 +141,12 @@ with `VMPLAPACK_ENABLE_MPFR`).
 4. Update `ROUTINES.md` for the milestone: document every product-level public routine added or changed,
    plus the important helper/subordinate routines that make the public routine work. Cover purpose,
    signatures, status behavior, runtime/oracle requirements, and how users should interpret results.
-5. Run the milestone's acceptance commands; all green before proceeding.
-6. Open **one PR** for the milestone.
+5. Add or update milestone examples for every product-level public routine or user-facing behavior
+   added by the milestone. Examples must be tier-complete per the style rules below; if a milestone is
+   infrastructure-only and no useful runnable example exists, state that explicitly in the milestone
+   report.
+6. Run the milestone's acceptance commands; all green before proceeding.
+7. Open **one PR** for the milestone.
 
 If a milestone's acceptance cannot be met without violating a golden rule, **stop and report the
 exact conflict** rather than weakening the rule.
