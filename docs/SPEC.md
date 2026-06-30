@@ -1191,7 +1191,34 @@ contract in `ROADMAP.md` applies) is specified separately when reached.*
   certificate fails, an upward norm overflows, or the condition product/reciprocal cannot be bounded
   finitely, return `status == Rstatus::unbounded` with `kappa_upper=+inf` and `rcond_lower=0`.
 
-  M14b does not implement determinants. M14c remains a separate determinant-specific algorithm.
+  M14b itself does not implement determinants. M14c below owns the determinant certificate.
+
+- **M14c — Verified determinant contract.** Add a row-major point-matrix determinant routine:
+
+  ```cpp
+  template <class REAL>
+  Rmidrad<REAL> vRgedet(std::ptrdiff_t n, const REAL* A, std::ptrdiff_t lda);
+  ```
+
+  `A` is an `n x n` point matrix indexed `A[i*lda+j]`, with `lda >= n`. Storage is row-major and
+  leading dimensions are measured in scalar elements. For `status == Rstatus::ok`, the true real
+  determinant is guaranteed to lie in `[mid-rad, mid+rad]`. This is a scalar verified routine, so it
+  returns `Rmidrad<REAL>` directly rather than `VerificationStatus`.
+
+  M14c is a determinant-specific certificate and is not a byproduct of `vRgesv`, `vRgeinv`, or
+  `vRgecon`. The current reference implementation evaluates the Leibniz determinant expansion
+  directly for small orders: every permutation product is enclosed with outward interval
+  multiplication, then signed terms are accumulated with outward summation. This avoids interval-LU
+  dependency effects but has factorial cost. Therefore the M14c reference implementation supports
+  `n <= 8`; for `n > 8` it returns `Rstatus::unbounded`. A future scalable Rump-style determinant
+  bound may improve this without changing the public signature.
+
+  Boundary and status rules: negative `n`, null `A` for `n > 0`, or `lda < n` return
+  `Rstatus::invalid_input`. `n == 0` returns the standard empty determinant `{mid=1, rad=0, status=ok}`.
+  Non-finite input returns `Rstatus::non_finite` and claims no finite determinant certificate. If a
+  finite-input product/sum overflows or the order is unsupported, return `Rstatus::unbounded` with
+  `rad=+inf`. A singular finite matrix is not an error; if the expansion can enclose determinant zero
+  finitely, return `status == ok`.
 
 ---
 

@@ -325,7 +325,7 @@ M13 inverse certificate failure              Unverified, unbounded boxes
 all inverse boxes ok                         Verified
 ```
 
-M14a does not implement determinants. M14c remains a separate determinant-specific algorithm.
+M14a does not implement determinants; `vRgedet` below is the separate determinant-specific routine.
 `example_m14_verified_inverse` prints inverse midpoint/radius matrices for a regular case and a
 near-singular 2x2 case, then verifies how tightly `A * inverse.mid` encloses the identity.
 `example_m14_verified_inverse_highcondition` builds larger dense symmetric examples as
@@ -387,6 +387,48 @@ non-finite A input                      non_finite, no finite condition certific
 inverse certificate failure or overflow unbounded, kappa=+inf, rcond=0
 all bounds finite and certified         ok
 ```
+
+## M14c Verified Determinant Contract
+
+M14c adds the public determinant routine below:
+
+```cpp
+template <class REAL>
+Rmidrad<REAL> vRgedet(std::ptrdiff_t n, const REAL* A, std::ptrdiff_t lda);
+```
+
+Storage is row-major. `A` is an `n x n` point matrix with `A[i*lda+j]` and `lda >= n`; leading
+dimensions are measured in scalar elements. For `status == Rstatus::ok`, the true real determinant
+is guaranteed to be in `[mid-rad, mid+rad]`. Singular finite matrices are valid inputs: a determinant
+box enclosing zero with `status == ok` is the correct successful result.
+
+The current implementation is a determinant-specific reference certificate, not an LU intervalization
+and not a byproduct of `vRgesv` / `vRgeinv`. It directly evaluates the Leibniz expansion for small
+orders. Each permutation product is built as an interval with outward multiplication, then the signed
+terms are accumulated with outward summation. This is sound but factorial-time, so this reference path
+supports `n <= 8`; larger orders return `unbounded`.
+
+Important helpers:
+
+```text
+determinant_product_interval  outward interval product for one permutation term
+permutation_is_odd            sign of the permutation term
+determinant_leibniz_max_order current reference limit, 8
+```
+
+Boundary and status rules:
+
+```text
+n < 0, null A for n > 0, lda < n       invalid_input
+n == 0                                 ok, determinant 1
+non-finite A input                      non_finite, no finite determinant certificate
+n > 8                                  unbounded, reference path unsupported
+finite-input overflow                   unbounded, rad=+inf
+finite determinant enclosure built      ok
+```
+
+A future scalable Rump-style determinant bound can replace the internal reference path without
+changing this public signature or the meaning of `Rmidrad`.
 
 ## `vRdot`
 

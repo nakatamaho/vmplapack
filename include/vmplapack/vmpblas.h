@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -115,6 +116,9 @@ struct Rcond_bounds {
 
 template <class REAL>
 Rcond_bounds<REAL> vRgecon(std::ptrdiff_t n, const REAL* A, std::ptrdiff_t lda);
+
+template <class REAL>
+Rmidrad<REAL> vRgedet(std::ptrdiff_t n, const REAL* A, std::ptrdiff_t lda);
 
 template <class REAL>
 REAL Rsum(std::ptrdiff_t n, const REAL* x, std::ptrdiff_t incx) {
@@ -414,6 +418,70 @@ Rmidrad<REAL> status_midrad(Rstatus status) {
         return {A::zero(), A::zero(), Rstatus::ok};
     }
     return {A::zero(), A::infinity(), status};
+}
+
+inline std::ptrdiff_t determinant_leibniz_max_order() {
+    return 8;
+}
+
+inline bool permutation_is_odd(const std::vector<std::ptrdiff_t>& permutation) {
+    bool odd = false;
+    std::size_t size = permutation.size();
+    for (std::size_t i = 0; i < size; ++i) {
+        for (std::size_t j = i + 1; j < size; ++j) {
+            if (permutation[i] > permutation[j]) {
+                odd = !odd;
+            }
+        }
+    }
+    return odd;
+}
+
+template <class REAL>
+bool determinant_product_interval(std::ptrdiff_t n,
+                                  const REAL* A_data,
+                                  std::ptrdiff_t lda,
+                                  const std::vector<std::ptrdiff_t>& permutation,
+                                  REAL& lo,
+                                  REAL& hi) {
+    using A = Rarith<REAL>;
+
+    lo = A::one();
+    hi = A::one();
+    for (std::ptrdiff_t row = 0; row < n; ++row) {
+        REAL factor = A_data[row * lda + permutation[static_cast<std::size_t>(row)]];
+        REAL next_lo = A::zero();
+        REAL next_hi = A::zero();
+        if (factor >= A::zero()) {
+            {
+                typename A::round_down scope;
+                REAL product = lo * factor;
+                next_lo = product;
+            }
+            {
+                typename A::round_up scope;
+                REAL product = hi * factor;
+                next_hi = product;
+            }
+        } else {
+            {
+                typename A::round_down scope;
+                REAL product = hi * factor;
+                next_lo = product;
+            }
+            {
+                typename A::round_up scope;
+                REAL product = lo * factor;
+                next_hi = product;
+            }
+        }
+        if (!A::is_finite(next_lo) || !A::is_finite(next_hi)) {
+            return false;
+        }
+        lo = next_lo;
+        hi = next_hi;
+    }
+    return true;
 }
 
 template <class REAL>
@@ -1389,6 +1457,69 @@ Rcond_bounds<REAL> vRgecon(std::ptrdiff_t n, const REAL* A_data, std::ptrdiff_t 
     return {normA_upper, normAinv_upper, kappa_upper, rcond_lower, Rstatus::ok};
 }
 
+template <class REAL>
+Rmidrad<REAL> vRgedet(std::ptrdiff_t n, const REAL* A_data, std::ptrdiff_t lda) {
+    using A = Rarith<REAL>;
+
+    if (n < 0) {
+        return detail::invalid_midrad<REAL>();
+    }
+    if (n == 0) {
+        return {A::one(), A::zero(), Rstatus::ok};
+    }
+    if (A_data == nullptr || lda < n) {
+        return detail::invalid_midrad<REAL>();
+    }
+    if (!detail::finite_square_matrix(n, A_data, lda)) {
+        return detail::non_finite_midrad<REAL>();
+    }
+    if (n > detail::determinant_leibniz_max_order()) {
+        return detail::status_midrad<REAL>(Rstatus::unbounded);
+    }
+
+    std::vector<std::ptrdiff_t> permutation(static_cast<std::size_t>(n));
+    for (std::ptrdiff_t i = 0; i < n; ++i) {
+        permutation[static_cast<std::size_t>(i)] = i;
+    }
+
+    REAL det_lo = A::zero();
+    REAL det_hi = A::zero();
+    bool more_permutations = true;
+    while (more_permutations) {
+        REAL product_lo = A::zero();
+        REAL product_hi = A::zero();
+        if (!detail::determinant_product_interval(n, A_data, lda, permutation, product_lo, product_hi)) {
+            return detail::status_midrad<REAL>(Rstatus::unbounded);
+        }
+
+        REAL term_lo = product_lo;
+        REAL term_hi = product_hi;
+        if (detail::permutation_is_odd(permutation)) {
+            term_lo = -product_hi;
+            term_hi = -product_lo;
+        }
+
+        {
+            typename A::round_down scope;
+            REAL next = det_lo + term_lo;
+            det_lo = next;
+        }
+        {
+            typename A::round_up scope;
+            REAL next = det_hi + term_hi;
+            det_hi = next;
+        }
+        if (!A::is_finite(det_lo) || !A::is_finite(det_hi)) {
+            return detail::status_midrad<REAL>(Rstatus::unbounded);
+        }
+
+        more_permutations = std::next_permutation(permutation.begin(), permutation.end());
+    }
+
+    REAL mid = Rmidpoint(det_lo, det_hi);
+    return Rmake_midrad(det_lo, det_hi, mid);
+}
+
 extern template float Rsum<float>(std::ptrdiff_t, const float*, std::ptrdiff_t);
 extern template double Rsum<double>(std::ptrdiff_t, const double*, std::ptrdiff_t);
 extern template float Rdot<float>(std::ptrdiff_t, const float*, std::ptrdiff_t, const float*, std::ptrdiff_t);
@@ -1507,6 +1638,9 @@ extern template VerificationStatus vRgeinv<double>(std::ptrdiff_t,
 extern template Rcond_bounds<float> vRgecon<float>(std::ptrdiff_t, const float*, std::ptrdiff_t);
 extern template Rcond_bounds<double> vRgecon<double>(std::ptrdiff_t, const double*, std::ptrdiff_t);
 
+extern template Rmidrad<float> vRgedet<float>(std::ptrdiff_t, const float*, std::ptrdiff_t);
+extern template Rmidrad<double> vRgedet<double>(std::ptrdiff_t, const double*, std::ptrdiff_t);
+
 #ifdef VMPLAPACK_ENABLE_MPFR
 extern template mpfrxx::mpfr_class Rsum<mpfrxx::mpfr_class>(std::ptrdiff_t,
                                                             const mpfrxx::mpfr_class*,
@@ -1580,6 +1714,9 @@ extern template VerificationStatus vRgeinv<mpfrxx::mpfr_class>(std::ptrdiff_t,
 extern template Rcond_bounds<mpfrxx::mpfr_class> vRgecon<mpfrxx::mpfr_class>(std::ptrdiff_t,
                                                                             const mpfrxx::mpfr_class*,
                                                                             std::ptrdiff_t);
+extern template Rmidrad<mpfrxx::mpfr_class> vRgedet<mpfrxx::mpfr_class>(std::ptrdiff_t,
+                                                                      const mpfrxx::mpfr_class*,
+                                                                      std::ptrdiff_t);
 #endif
 
 } // namespace vmplapack

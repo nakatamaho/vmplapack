@@ -40,6 +40,7 @@ vRgesv(n, A, lda, b, incb, x, incx)
 vRgesv(n, nrhs, A, lda, B, ldb, X, ldx)
 vRgeinv(n, A, lda, Ainv, ldinv)
 vRgecon(n, A, lda)
+vRgedet(n, A, lda)
 ```
 
 For scalar `Rmidrad` components with `status == ok`, the true finite result is guaranteed to be in:
@@ -55,11 +56,11 @@ component box is `ok`; `Unverified` means at least one component is `unbounded` 
 `InvalidInput` means a boundary-rule violation; `Unsupported` is reserved for future LA modes.
 `vRgemv_point` and `vRgemm_point` use the M12b a-priori component enclosure first and fall back to the
 M12a directed component enclosure when the a-priori bound is unbounded. `vRgesv` returns a normwise
-verified enclosure for square point systems when it can certify `||I - R*A||_inf < 1`. `vRgeinv` returns verified inverse boxes. `vRgecon` returns certified infinity-norm condition diagnostics: an upper bound on `||A||_inf * ||A^{-1}||_inf` and a lower bound on the reciprocal condition, not an exact condition enclosure.
+verified enclosure for square point systems when it can certify `||I - R*A||_inf < 1`. `vRgeinv` returns verified inverse boxes. `vRgecon` returns certified infinity-norm condition diagnostics: an upper bound on `||A||_inf * ||A^{-1}||_inf` and a lower bound on the reciprocal condition, not an exact condition enclosure. `vRgedet` returns a scalar determinant enclosure; the current reference certificate supports `n <= 8` and returns `unbounded` above that limit.
 
 Verification means interval inclusion, not closeness to an MPFR point. Tests compare verified intervals against an MPFR oracle interval `[ref_lo, ref_hi]`.
 
-See `ROUTINES.md` for the user-facing behavior of `vRdot`, `vRdot_apriori`, and `vRgecon`, including how to
+See `ROUTINES.md` for the user-facing behavior of `vRdot`, `vRdot_apriori`, `vRgecon`, and `vRgedet`, including how to
 interpret `mid`, `rad`, scalar condition bounds, and status values.
 
 ## Boundary Rules

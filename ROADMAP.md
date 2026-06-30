@@ -116,12 +116,12 @@ with scalar `Rmidrad<REAL>`. Tiers stay co-equal via `Rarith<REAL>`.
 | **M13** | Verified solve + nonsingularity | `vRgesv` (Ax=b, AX=B) | approx x̃ and approx inverse/preconditioner R (FP); enclose α=‖I−RA‖ (upward); if α<1 then ‖x−x̃‖ ≤ ‖R(b−Ax̃)‖/(1−α); **residual `b−Ax̃` computed accurately** (M12 / compensated dot — essential for ill-conditioned A). α≥1 ⇒ `Unverified`, **not** "A singular". Consider componentwise bounds (normwise can be pessimistic). | **Solid** |
 | **M14a** | Verified inverse | `vRgeinv` | solve `AX=I`; return a midrad enclosure of A⁻¹ | **Solid** |
 | **M14b** | Certified condition bounds | `vRgecon` | return certified bounds with **explicitly specified meaning** (e.g. upper bound on ‖A‖·‖A⁻¹‖ and/or lower bound on rcond); do not claim an exact condition enclosure | **Solid-ish** |
-| **M14c** | Verified determinant | `vRgedet` | **separate algorithm** (determinant-specific verified bounds, Rump 2020); naive interval LU suffers dependency explosion. **Not** a byproduct of M13. | **Stretch** |
+| **M14c** | Verified determinant | `vRgedet` | **separate algorithm**; current reference certificate directly encloses the Leibniz expansion for `n <= 8`, returning `unbounded` above that. A scalable Rump-style bound can replace the internals later. **Not** a byproduct of M13. | **Reference baseline** |
 | **M15** | Verified positive definiteness | `vRpodef` (SPD certificate + λ_min lower bound) | FP Cholesky-based **candidate** for A−cI, then verify **Rump's sufficient criterion including all rounding errors** (Rump 2006). *Completion of FP Cholesky alone is NOT a certificate.* If certified ⇒ A is SPD and λ_min(A) > c. Fix the input-symmetry policy (assume exact symmetric storage, or check + symmetrize with an explicit enclosure). | **Stretch** |
 | **M16** | Verified Hermitian eigenvalues / invariant subspaces | `vRsyev`/`vRheev`, `vReigpair` | (1) eigenvalue intervals via a **verified Hermitian inertia routine** (signs of a verified LDLᵀ/LDL* of A−σI with rigorous error control) + bisection — A−σI is generally **indefinite**, so Cholesky does **not** give full inertia; the M15 PD certificate only serves threshold tests (all eigenvalues above/below σ), not counting; (2) simple eigenpair residual bounds (Rayleigh quotient, Weyl/Temple); (3) **clustered invariant-subspace** enclosures via Hermitian-specific methods (Rump–Lange 2023). Bauer–Fike belongs to the nonsymmetric frontier, not here. | **Stretch** |
 
 **Release line B = M12 + M13 + M14a/b** (verified solve, inverse, condition). v1.0 of the LA goal;
-`vRgedet` (M14c) may trail.
+`vRgedet` (M14c) is separate and currently reference-quality.
 
 ---
 
